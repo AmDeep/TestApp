@@ -85,16 +85,17 @@ npx web-push generate-vapid-keys
 
 For email, verify the sender domain with Resend and set `MAIL_FROM`. Set `APP_URL` to the actual HTTPS Render service URL. Email delivery is not active without both `RESEND_API_KEY` and `MAIL_FROM`. Push delivery is not active without both VAPID keys; each user must opt in from Accounts & household on each browser/device.
 
-## Deploy to Render
+## Deploy to Render (embedded local database)
 
-1. Push this project to a Git repository.
-2. Create a Render Blueprint from `render.yaml`.
-3. The blueprint provisions a web service and PostgreSQL database, injects the database connection string and generates a JWT secret.
-4. Set `APP_URL` to the deployed HTTPS origin. Configure `RESEND_API_KEY` and `MAIL_FROM` for invitation, reset and maintenance email. Configure VAPID keys for browser push.
-5. Optionally set `GROQ_API_KEY` for AI synthesis.
-6. Wait for schema bootstrap, then verify `/api/health` reports `status: ok` and `database: connected`.
+1. Push the project to the existing GitHub repository.
+2. In Render, create a Blueprint from that repository and select `render.yaml`.
+3. The blueprint creates a Node web service with a 1 GB persistent disk mounted at `/var/data`. No hosted PostgreSQL service or `DATABASE_URL` is required.
+4. The embedded PGlite database is initialized at `/var/data/db`; schema and demo household are created automatically on first startup.
+5. Demo login: `demo@harmonioushome.app` / `HomeDemo2026!`. Change `DEMO_PASSWORD` before the first deployment if you do not want the published demo password.
+6. Optionally configure `APP_URL`, Resend sender/API key and VAPID keys for email/push reminders. Add `GROQ_API_KEY` for AI synthesis.
+7. Verify `/api/health` reports `status: ok` and `database: connected`.
 
-The Render blueprint uses paid starter web/database resources; review Render pricing and choose appropriate plans before deploying.
+The persistent disk is required: without it, local database changes can be lost when the service is replaced. This embedded database setup is intended for a single web-service instance, not horizontal scaling or high-concurrency production. Render's persistent disk and starter web service may incur charges; review current pricing before creating the Blueprint.
 
 ## API overview
 
@@ -108,7 +109,7 @@ The Render blueprint uses paid starter web/database resources; review Render pri
 ## Security and operational requirements before public launch
 
 - Use HTTPS only; configure a strong secret and restrict CORS if serving a separate frontend.
-- Configure managed PostgreSQL backups/PITR, restore drills, monitoring and alerting.
+- Configure persistent-disk backups, restore drills, monitoring and alerting. For multi-instance or higher-scale deployment, migrate to managed PostgreSQL.
 - Configure Resend sender-domain verification and VAPID keys; monitor provider delivery failures.
 - The reminder scheduler runs inside the web process. For multiple web instances, notification-job uniqueness prevents duplicate sends, but use a dedicated worker/queue and distributed scheduler for higher-scale deployments.
 - Current workspace persistence stores household data as versioned JSONB. It is suitable for the product's current feature set, but high-scale analytics and complex accounting should move to normalized domain tables.
@@ -124,4 +125,4 @@ npm test
 npm run build
 ```
 
-The domain tests validate the deterministic assessment rules. End-to-end tests against a live PostgreSQL/Render environment should be run before production release.
+The domain tests validate the deterministic assessment rules. End-to-end tests against a live embedded-database/Render environment should be run before production release.

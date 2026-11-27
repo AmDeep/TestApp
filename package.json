@@ -1,6 +1,6 @@
 {
   "name": "harmonious-home",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "test": "node --test",
     "check": "npm run test && npm run build",
-    "db:check": "node -e \"console.log(\\\"Database schema is applied automatically at server startup\\\")\""
+    "db:check": "node -e \"console.log(\"Embedded PGlite schema and demo account initialize automatically on server startup\")\""
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -24,12 +24,12 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
-    "pg": "^8.13.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "web-push": "^3.6.7",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "@electric-sql/pglite": "^0.3.14"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
