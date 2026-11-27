@@ -1,8 +1,8 @@
-# Harmonious Home · v4.1
+# Harmonious Home · v4.3
 
 A responsive home intelligence and household project platform. Feng Shui, Vastu and practical building observations remain distinct; deterministic domain rules are authoritative, with optional bounded Groq language synthesis.
 
-## v4 platform capabilities
+## v4.3 platform capabilities
 
 ### Identity and account management
 - Email/password registration and sign-in; passwords hashed with bcrypt.
@@ -11,7 +11,7 @@ A responsive home intelligence and household project platform. Feng Shui, Vastu 
 - Password reset and invitations can be delivered through Resend.
 
 ### Embedded PGlite workspace
-- Embedded PGlite database with schema bootstrap and demo-account seeding at server startup.
+- Embedded PGlite database with automatic schema bootstrap; optional demo-account seeding only when a private `DEMO_PASSWORD` is configured.
 - Household-scoped workspace JSON persistence for profile, assessments, room journal, projects, measured plan, maintenance and financial records.
 - Optimistic version checks prevent silent overwrites; authenticated users can sync across devices.
 - Autosave to cloud after edits; manual refresh/save controls; local browser copy remains available offline.
@@ -44,6 +44,14 @@ A responsive home intelligence and household project platform. Feng Shui, Vastu 
 - Vendor directory, purchase order register and invoice register with due dates/status.
 - Budget headroom compares paid transactions and committed purchase orders with the working budget.
 - Financial records are household workspace data and synchronise with cloud workspace updates.
+
+### Finance desk interaction upgrade (v4.2)
+- Finance overview with category spend bars, budget headroom, outstanding invoices and rule-based next-step suggestions.
+- Dedicated transactions, vendors, purchase orders and invoices workspaces with search and status filters.
+- Draft/approve/receive purchase-order flow; received orders can be staged as planned ledger entries for review before payment.
+- Invoice overdue cues, duplicate invoice/vendor checks, receipt/reference completeness nudges and CSV export.
+- Animated loading feedback, accessible status messaging, reduced-motion support and a top-level React error boundary.
+- Finance data remains in the shared household workspace; the assistant surfaces checks but never makes payments or changes financial status without a user action.
 
 ### Existing home intelligence features
 - Guided assessment, conceptual room explorer, report, assessment history and comparisons.
@@ -90,8 +98,8 @@ For email, verify the sender domain with Resend and set `MAIL_FROM`. Set `APP_UR
 1. Push the project to the existing GitHub repository.
 2. In Render, create a Blueprint from that repository and select `render.yaml`.
 3. The blueprint creates a Node web service with a 1 GB persistent disk mounted at `/var/data`. No hosted PostgreSQL service or `DATABASE_URL` is required.
-4. The embedded PGlite database is initialized at `/var/data/db`; schema and demo household are created automatically on first startup.
-5. Demo login: `demo@harmonioushome.app` / `HomeDemo2026!`. Change `DEMO_PASSWORD` before the first deployment if you do not want the published demo password.
+4. The embedded PGlite database is initialized at `/var/data/db`; schema is created automatically on first startup.
+5. To seed a demo account, set a strong private `DEMO_PASSWORD` environment variable before first startup. If unset, demo-account seeding is skipped; users can register normally. Never commit the demo password to source control. If the database was already seeded, changing the environment variable does not reset that existing account password.
 6. Optionally configure `APP_URL`, Resend sender/API key and VAPID keys for email/push reminders. Add `GROQ_API_KEY` for AI synthesis.
 7. Verify `/api/health` reports `status: ok` and `database: connected`.
 
@@ -126,3 +134,11 @@ npm run build
 ```
 
 The domain tests validate the deterministic assessment rules. End-to-end tests against a live embedded-database/Render environment should be run before production release.
+
+## Version 4.3.0 routing and API discovery
+
+All main application modules now have direct URLs under `/app/`: `/app/overview`, `/app/assessment`, `/app/room-plan`, `/app/explorer`, `/app/room-journal`, `/app/projects`, `/app/budget`, `/app/finance/overview`, `/app/maintenance`, `/app/compare`, `/app/history`, `/app/household`, and `/app/settings`. Finance submodules have dedicated URLs at `/app/finance/{overview,transactions,vendors,orders,invoices}`. Express serves the SPA entry point for direct route refreshes while `/api/*` remains reserved for JSON APIs.
+
+API discovery is available at `GET /api` and `GET /api/v1`; health is `GET /api/health`. The API catalogue lists implemented endpoints and authentication requirements. Finance records are persisted inside the versioned household workspace payload and also exposed through authenticated `GET/PUT /api/finance` endpoints with role checks, payload-size limits, audit entries and optimistic concurrency. Project, maintenance and room data use the shared `GET/PUT /api/workspace` endpoints. Browser-local mode remains available, and the existing authenticated workspace endpoint is the cloud persistence boundary.
+
+Audio features are opt-in and browser-native: Listen uses speech synthesis where supported, while interface sounds are generated locally only after the user enables them. No audio is recorded or uploaded.

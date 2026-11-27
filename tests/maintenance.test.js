@@ -9,3 +9,9 @@ test('one-time tasks do not recur',()=>assert.equal(nextMaintenanceDate('2026-11
 test('invalid dates are rejected',()=>assert.equal(nextMaintenanceDate('not-a-date','Monthly'),null))
 
 test('invalid calendar dates are rejected',()=>assert.equal(nextMaintenanceDate('2026-02-31','Monthly'),null))
+
+test('maintenance page tolerates a legacy workspace without a maintenance array', () => {
+  const workspace = { projects: [], rooms: {}, budget: 0 }
+  const tasks = Array.isArray(workspace.maintenance) ? workspace.maintenance : []
+  assert.deepEqual(tasks, [])
+})

@@ -1,0 +1,11 @@
+{
+  "name": "Harmonious Home",
+  "short_name": "Harmonious",
+  "description": "A thoughtful home assessment and household workspace",
+  "start_url": "/app/overview",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f0f1e9",
+  "theme_color": "#f0f1e9",
+  "icons": [{"src":"/favicon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]
+}
