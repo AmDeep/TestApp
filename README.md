@@ -1,6 +1,32 @@
-# Harmonious Home · v4.6
+# Harmonious Home · v4.8
 
 A responsive home intelligence and household project platform. Feng Shui, Vastu and practical building observations remain distinct; deterministic domain rules are authoritative, with optional bounded Groq language synthesis.
+
+## v4.8 grounded Home AI, retrieval, local speech and responsive workspace navigation
+
+- Added a dedicated **Home AI & knowledge** workspace with chat, a searchable reference library, topic filters, source cards and visible per-answer citations. It uses the authenticated household API; users must sign in and configure `GROQ_API_KEY` to chat.
+- Expanded the curated reference registry to 41 public-access sources spanning Canadian home energy, radon and indoor air guidance; mould/moisture; HVAC; fire safety; food safety; gardening; accessibility/ergonomics; and healthy housing. The full source list and reuse notes are in [`docs_KNOWLEDGE_SOURCES.md`](docs_KNOWLEDGE_SOURCES.md).
+- Built a real ingestion pipeline: server-side fetch with timeouts and size limits, HTML text extraction, heading/paragraph-aware 180-word chunks with 35-word overlap, stable chunk IDs, persistent source provenance, and a persistent vector index.
+- **Dense semantic vectorization** uses the Apache-2.0 `@huggingface/transformers` JavaScript runtime and `onnx-community/all-MiniLM-L6-v2-ONNX` (384-dimensional mean-pooled, L2-normalized embeddings). Embeddings are generated locally in batches of 12 and cached under `HF_HOME` on the existing Render persistent disk. A normalized TF-IDF + adjacent-bigram fallback keeps retrieval usable if model download/runtime is unavailable.
+- **Hybrid fetching** fuses dense cosine similarity with BM25-style lexical ranking (72/28 weighting), returns up to six evidence passages, and sends only those excerpts to the Groq model. The system prompt requires inline `[1]` citations, prohibits fabricated references and instructs the model to abstain when evidence is weak. API responses return exact source URLs, publisher, reuse note and excerpt alongside the answer.
+- PGlite tables `knowledge_documents`, `knowledge_chunks` and `knowledge_meta` are added non-destructively. No existing household/workspace tables or Render disk paths are reset. Server startup checks for catalogue entries not yet indexed and ingests only missing/failed sources in the background. Re-ingest with `npm run rag:ingest`; force refresh with `npm run rag:ingest -- --force`.
+- Added a collapsible left navigation rail, persisted collapsed state, a scrollable navigation list, responsive mobile behavior, animated knowledge hero, animated chat states, staggered reference cards, and reduced-motion support.
+- The React narrator uses Kokoro-82M through the open-source `kokoro-js` package (Apache-2.0), synthesizing speech locally in the browser. It offers multiple US/UK English voices, adjustable speed, WebGPU selection with WebAssembly fallback, and no speech API key or server speech endpoint.
+
+### v4.8 local neural speech and expanded RAG corpus
+
+- Replaced Azure-dependent narration with `kokoro-js` (Apache-2.0) and the Kokoro-82M ONNX voice model. Select from American and British English voices and adjust speech generation speed. WebGPU is preferred when available; WebAssembly is the fallback. The first read downloads the model into the browser cache. No `AZURE_*` or `VITE_*` variables are needed for speech.
+- Expanded the source catalogue from 16 to 41 references. New sources cover Canadian national building-code access, Ontario building and homeowner guidance, carbon monoxide, asbestos, lead and well water, septic care, pest management, emergency preparation, heat pumps, windows, weatherization, water heating, safer cleaning, radon mitigation, water efficiency, rain gardens, home gardening, furniture tip-over prevention, ENERGY STAR appliances and flood resilience.
+- Startup compares the indexed document IDs with the catalogue and automatically ingests missing or failed entries. Existing ready documents are skipped. It then rebuilds the shared vector index to include the new passages. The existing Render PGlite database and disk mount are retained.
+- Navigation remains collapsible and the navigation list scrolls independently within the fixed sidebar.
+
+### RAG API and operational steps
+
+- `GET /api/knowledge/documents` — authenticated source registry, ingestion status, chunk count and vectorizer metadata.
+- `POST /api/assist/chat` — authenticated, rate-limited RAG chat with source citations.
+- `GET /api/health` — now includes `knowledgeConfigured` and `knowledgeChunks`.
+- Configure `HF_HOME=/var/data/hf-cache` (already added to `render.yaml`). The model downloads on first ingestion and remains cached on the persistent disk.
+- Set `GROQ_API_KEY` for generated chat answers. No speech-related environment variables are required. `HF_HOME=/var/data/hf-cache` is used for the server-side RAG embedding model cache.
 
 ## v4.5 interaction, workspace tools and agentic assistance
 
@@ -29,14 +55,14 @@ These libraries are intentionally used for concrete application flows rather tha
 
 ## v4.6 advanced speech, specialist agents and rich editing
 
-- **Microsoft Azure AI Speech SDK for JavaScript** (`microsoft-cognitiveservices-speech-sdk`) powers opt-in Microsoft neural voices in the page narrator. The browser requests a short-lived authorization token from authenticated `GET /api/speech/token`; the Azure Speech resource key stays server-side. The endpoint is rate-limited, caches tokens briefly, and reports a clear configuration error. If Azure is not configured or unavailable, the narrator falls back to browser speech synthesis.
-- Configure `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` in Render. Create an Azure AI Speech resource first; choose its actual region (the template defaults to `canadacentral`, which must match the resource). No key belongs in Vite `VITE_*` variables or browser source. Speech is user-initiated; the current page text (up to 7,000 characters) is sent to Azure only for synthesis. No audio recording is created.
-- Six selectable English Neural voices include US and Canadian options. Voice choice and browser-fallback rate persist locally. Interface sound effects remain a separate opt-in setting.
+
+
+
 - **React Flow** (`@xyflow/react` v12.12.1) renders the agent orchestration graph, specialist hand-offs, safety review and human approval stage.
 - **Tiptap** (`@tiptap/react` v3.35.0, `@tiptap/starter-kit`, `@tiptap/extension-placeholder`) upgrades the room journal with rich text, lists, bold/italic formatting and undo/redo.
 - The AI council now includes a Home Project Planner, Maintenance Triage Agent, Budget Steward Agent, Accessibility & Usability Reviewer and independent Safety Gate. Specialist outputs are separately screened; only the project ideas that pass the gate are offered for explicit user acceptance. AI insights remain advisory, cannot inspect the home, and do not write records automatically.
 - Planning intents include whole-home priorities, maintenance/seasonal care, project sequencing, budget/procurement review, accessibility/usability and room organization. Budget prompts use only supplied numeric values and record counts; they do not invent amounts or provide financial advice.
-- Vendor chunks now separate Azure Speech, React Flow and Tiptap from the application core. Speech SDK is dynamically imported only when narration starts.
+- Vendor chunks separate React Flow and Tiptap from the application core.
 
 ### Advanced package catalogue (installed and used)
 
@@ -45,7 +71,8 @@ These libraries are intentionally used for concrete application flows rather tha
 | `motion` | Route, panel and micro-interaction transitions |
 | `@dnd-kit/core`, `@dnd-kit/sortable` | Accessible Kanban drag-and-drop |
 | `@xyflow/react` | Visual multi-agent workflow graph |
-| `microsoft-cognitiveservices-speech-sdk` | Microsoft Azure neural speech playback |
+| `kokoro-js` | Browser-local open-source neural text-to-speech |
+| `@huggingface/transformers` | Local MiniLM ONNX sentence embeddings for RAG |
 | `@tiptap/react`, `@tiptap/starter-kit` | Rich room journal editor |
 | `@tanstack/react-query` | Health/status query cache |
 | `zustand` | Persisted interface and voice preferences |
@@ -140,6 +167,7 @@ npm start
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Optional Web Push delivery |
 | `SCHEDULER_TIMEZONE` | Time zone for daily reminder schedule; defaults to `America/Toronto` |
 | `GROQ_API_KEY`, `GROQ_MODEL` | Optional language synthesis |
+| `HF_HOME` | Persistent Hugging Face/ONNX model cache for server-side RAG embeddings (Render: `/var/data/hf-cache`) |
 | `ALLOWED_ORIGINS` | Optional comma-separated CORS origins; same-origin deployment can leave blank |
 
 Generate VAPID keys with:
@@ -164,7 +192,9 @@ The persistent disk is required: without it, local database changes can be lost 
 
 ## API overview
 
-- `GET /api/health` — database/auth/AI/push readiness.
+- `GET /api/health` — database/auth/AI/push/knowledge readiness.
+- `GET /api/knowledge/documents` — authenticated document and vector index status.
+- `POST /api/assist/chat` — authenticated RAG chat with returned source citations.
 - `POST /api/auth/register`, `/login`, `/logout`, `/forgot-password`, `/reset-password`, `/change-password`; `GET /api/auth/me`; `PATCH /api/auth/profile`.
 - `GET /api/household`; `POST /api/household/invites`, `/accept`; `PATCH/DELETE /api/household/members/:id`.
 - `GET/PUT /api/workspace` — authenticated household workspace with version conflict checks.
@@ -190,12 +220,12 @@ npm test
 npm run build
 ```
 
-The domain tests validate the deterministic assessment rules. End-to-end tests against a live embedded-database/Render environment should be run before production release.
+The domain tests validate deterministic assessment rules. Run `npm run rag:ingest` to populate or refresh the reference corpus; end-to-end tests against a live embedded-database/Render environment should be run before production release.
 
 ## Routing and API discovery (introduced in v4.3)
 
-All main application modules now have direct URLs under `/app/`: `/app/overview`, `/app/assessment`, `/app/room-plan`, `/app/explorer`, `/app/room-journal`, `/app/projects`, `/app/budget`, `/app/finance/overview`, `/app/maintenance`, `/app/compare`, `/app/history`, `/app/household`, and `/app/settings`. Finance submodules have dedicated URLs at `/app/finance/{overview,transactions,vendors,orders,invoices}`. Express serves the SPA entry point for direct route refreshes while `/api/*` remains reserved for JSON APIs.
+All main application modules now have direct URLs under `/app/`: `/app/overview`, `/app/assessment`, `/app/room-plan`, `/app/explorer`, `/app/room-journal`, `/app/projects`, `/app/budget`, `/app/finance/overview`, `/app/maintenance`, `/app/compare`, `/app/history`, `/app/household`, `/app/settings`, and `/app/home-assistant`. Finance submodules have dedicated URLs at `/app/finance/{overview,transactions,vendors,orders,invoices}`. Express serves the SPA entry point for direct route refreshes while `/api/*` remains reserved for JSON APIs.
 
 API discovery is available at `GET /api` and `GET /api/v1`; health is `GET /api/health`. The API catalogue lists implemented endpoints and authentication requirements. Finance records are persisted inside the versioned household workspace payload and also exposed through authenticated `GET/PUT /api/finance` endpoints with role checks, payload-size limits, audit entries and optimistic concurrency. Project, maintenance and room data use the shared `GET/PUT /api/workspace` endpoints. Browser-local mode remains available, and the existing authenticated workspace endpoint is the cloud persistence boundary.
 
-Audio features are opt-in and browser-native: Listen uses speech synthesis where supported, while interface sounds are generated locally only after the user enables them. No audio is recorded or uploaded.
+Audio is opt-in. The narrator uses Microsoft Cognitive Services Speech SDK with a short-lived token; interface sound effects are generated locally only after the user enables them. No audio recording is created.

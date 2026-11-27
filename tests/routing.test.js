@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {routeFromPath,routeUrl} from '../src/routing.js'
 
 test('primary modules resolve to stable routes and page identifiers',()=>{
-  for(const [page,slug] of Object.entries({overview:'overview',assessment:'assessment',layout:'room-plan',explore:'explorer',rooms:'room-journal',projects:'projects',budget:'budget',finance:'finance',maintenance:'maintenance',compare:'compare',history:'history',account:'household',settings:'settings'})){
+  for(const [page,slug] of Object.entries({overview:'overview',assessment:'assessment',layout:'room-plan',explore:'explorer',rooms:'room-journal',projects:'projects',budget:'budget',finance:'finance',maintenance:'maintenance',compare:'compare',history:'history',account:'household',settings:'settings',assistant:'home-assistant'})){
     assert.equal(routeFromPath(`/app/${slug}`).page,page)
     assert.equal(routeUrl(page),page==='finance'?'/app/finance/overview':`/app/${slug}`)
   }

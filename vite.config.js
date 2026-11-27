@@ -37,7 +37,7 @@ export default defineConfig({
             { name: 'dragdrop-vendor', test: /node_modules[\\/]@dnd-kit[\\/]/, priority: 23 },
             { name: 'ui-vendor', test: /node_modules[\\/](lucide-react|sonner)[\\/]/, priority: 22 },
             { name: 'state-vendor', test: /node_modules[\\/](@tanstack[\\/]react-query|zustand|zod)[\\/]/, priority: 21 },
-            { name: 'speech-vendor', test: /node_modules[\\/]microsoft-cognitiveservices-speech-sdk[\\/]/, priority: 27 },
+            { name: 'kokoro-vendor', test: /node_modules[\\/](kokoro-js|onnxruntime-web)[\\/]/, priority: 27 },
             { name: 'flow-vendor', test: /node_modules[\\/]@xyflow[\\/]/, priority: 24 },
             { name: 'editor-vendor', test: /node_modules[\\/]@tiptap[\\/]/, priority: 23 },
             { name: 'vendor', test: /node_modules[\\/]/, priority: 1 },

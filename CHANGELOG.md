@@ -1,5 +1,25 @@
 # Changelog
 
+## 4.8.0 — Local open-source neural speech and expanded knowledge corpus
+- Replaced Azure Speech integration with browser-local Kokoro TTS (Apache-2.0), multiple US/UK English voices, adjustable speed, WebGPU/WASM selection, local WAV synthesis and no speech secrets or backend endpoint.
+- Added 25 official/public technical references across Canadian building codes, Ontario home ownership, radon, indoor air, water, HVAC, weatherization, gardening, resilience, accessibility and household safety.
+- Startup ingestion now detects newly added or failed catalogue sources and indexes them without requiring a database reset; existing ready sources are skipped.
+- Made the fixed left navigation independently scrollable while preserving its collapse/expand state.
+
+## 4.7.0 — Grounded Home AI, semantic RAG and navigation redesign
+
+- Added 16 curated public-access home/building reference sources and an automated, non-blocking first-run ingestion pipeline.
+- Added paragraph/heading-aware chunking (180-word target, 35-word overlap), stable chunk IDs, source provenance, document status, and persistent PGlite knowledge tables.
+- Added local 384-dimensional MiniLM ONNX embeddings via Apache-2.0 Transformers.js; batch embedding and persistent model caching; sparse TF-IDF/bigram fallback when model inference cannot initialize.
+- Added hybrid cosine + BM25 retrieval, six-passage evidence selection, grounded Groq chat, inline citation instructions, returned source excerpts/URLs and low-evidence abstention behavior.
+- Added authenticated, rate-limited `/api/assist/chat` and authenticated `/api/knowledge/documents`; extended health status and API catalogue.
+- Added a new Home AI & knowledge page with a chat interface, quick prompts, source cards, searchable/filterable library, and retrieval transparency.
+- Added persistent collapsible navigation and scrollable sidebar, responsive layout, richer motion and reduced-motion support.
+- Standardized narration on Microsoft's open-source JavaScript Speech SDK in React; removed browser-native speech fallback. Azure Speech resource configuration is still required for cloud synthesis.
+- Added `HF_HOME` under the existing Render persistent disk. Existing `/var/data/db`, JWT, demo-password and household workspace data are preserved; no destructive migration.
+
+# Changelog
+
 ## 4.5.0 — Workspace windows, Kanban and bounded planning agents
 
 - Rebuilt project management as a three-lane Kanban board (Planned, In progress, Completed) with pointer and keyboard drag-and-drop across lanes and within lanes.

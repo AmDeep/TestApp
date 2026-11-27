@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 
 export const useUIStore = create(persist((set) => ({
   soundEnabled: false,
-  speechVoice: 'en-US-AvaNeural',
+  speechVoice: 'af_heart',
   speechRate: 1,
   setSoundEnabled: (soundEnabled) => set({ soundEnabled }),
   setSpeechVoice: (speechVoice) => set({ speechVoice }),

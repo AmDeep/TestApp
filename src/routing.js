@@ -2,7 +2,7 @@ export const PAGE_SLUGS = Object.freeze({
   overview:'overview', assessment:'assessment', results:'results', layout:'room-plan',
   explore:'explorer', rooms:'room-journal', projects:'projects', budget:'budget',
   finance:'finance', maintenance:'maintenance', compare:'compare', history:'history',
-  account:'household', settings:'settings'
+  account:'household', settings:'settings', assistant:'home-assistant'
 })
 export const SLUG_PAGES = Object.freeze(Object.fromEntries(Object.entries(PAGE_SLUGS).map(([page,slug])=>[slug,page])))
 export const FINANCE_SECTIONS = Object.freeze(['overview','transactions','vendors','orders','invoices'])

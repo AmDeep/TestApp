@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { Volume2, VolumeX } from 'lucide-react'
-import AzureNarrator from './AzureNarrator.jsx'
+import { Volume2, VolumeX, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import KokoroNarrator from './KokoroNarrator.jsx'
 import RichJournalEditor from './RichJournalEditor.jsx'
 import { useQuery } from '@tanstack/react-query'
 import { toast as sonnerToast } from 'sonner'
@@ -9,6 +9,7 @@ import { useUIStore } from './uiStore.js'
 import { projectSchema, maintenanceSchema, safeWorkspace } from './validation.js'
 import ProjectBoard from './ProjectBoard.jsx'
 import WorkspaceHub from './WorkspaceHub.jsx'
+import KnowledgeAssistant from './KnowledgeAssistant.jsx'
 import { nextMaintenanceDate } from './maintenance.js'
 import { CloudConsole, FloorPlanStudio, FinanceDesk } from './EnterpriseModules.jsx'
 import { routeFromPath, routeUrl } from './routing.js'
@@ -48,6 +49,7 @@ export default function App() {
   const audioEnabled = useUIStore(state => state.soundEnabled)
   const setAudioEnabled = useUIStore(state => state.setSoundEnabled)
   const prefersReducedMotion = useReducedMotion()
+  const [sidebarCollapsed,setSidebarCollapsed] = useState(()=>localStorage.getItem('hh-sidebar-collapsed')==='1')
   const [guideOpen,setGuideOpen] = useState(false)
   const [guideStep,setGuideStep] = useState(0)
   const [routeAnnouncement,setRouteAnnouncement] = useState('')
@@ -56,7 +58,7 @@ export default function App() {
     if(window.location.pathname!==target){(replace?window.history.replaceState:window.history.pushState).call(window.history,{},'',target)}
     setPageState(nextPage);setFinanceTab(nextFinanceTab);setRouteAnnouncement(`${navLabel(nextPage)} page`)
   }
-  function navLabel(id){return ({overview:'Overview',assessment:'Home assessment',results:'Assessment results',layout:'Room plan studio',explore:'Conceptual explorer',rooms:'Room journal',projects:'Project planner',budget:'Budget tracker',finance:'Finance and procurement',maintenance:'Maintenance',compare:'Compare reports',history:'History',account:'Accounts and household',settings:'Data and settings'})[id]||'Overview'}
+  function navLabel(id){return ({assistant:'Home AI & knowledge',overview:'Overview',assessment:'Home assessment',results:'Assessment results',layout:'Room plan studio',explore:'Conceptual explorer',rooms:'Room journal',projects:'Project planner',budget:'Budget tracker',finance:'Finance and procurement',maintenance:'Maintenance',compare:'Compare reports',history:'History',account:'Accounts and household',settings:'Data and settings'})[id]||'Overview'}
   useEffect(()=>{const onPop=()=>{const r=routeFromPath(window.location.pathname);setPageState(r.page);setFinanceTab(r.financeTab);setRouteAnnouncement(`${navLabel(r.page)} page`)};window.addEventListener('popstate',onPop);const r=routeFromPath(window.location.pathname);if(r.invalid)window.history.replaceState({},'',routeUrl('overview'));return()=>window.removeEventListener('popstate',onPop)},[])
   const [step,setStep] = useState(0)
   const [result,setResult] = useState(initialRoute.page==='results'?(latestSavedResult?.result||null):null)
@@ -121,7 +123,7 @@ export default function App() {
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})
     const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='harmonious-home-assessment.json';a.click();URL.revokeObjectURL(url);notify('Assessment export prepared')
   }
-  const nav=[['overview','Overview','⌂'],['assessment','Home assessment','▦'],['layout','Room plan studio','◇'],['explore','Conceptual explorer','⌖'],['rooms','Room journal','▤'],['projects','Project planner','✳'],['budget','Budget tracker','$'],['finance','Finance & procurement','¤'],['maintenance','Maintenance','◷'],['compare','Compare reports','⇄'],['history','History','↗'],['account','Accounts & household','◎'],['settings','Data & settings','⚙']]
+  const nav=[['overview','Overview','⌂'],['assistant','Home AI & knowledge','✧'],['assessment','Home assessment','▦'],['layout','Room plan studio','◇'],['explore','Conceptual explorer','⌖'],['rooms','Room journal','▤'],['projects','Project planner','✳'],['budget','Budget tracker','$'],['finance','Finance & procurement','¤'],['maintenance','Maintenance','◷'],['compare','Compare reports','⇄'],['history','History','↗'],['account','Accounts & household','◎'],['settings','Data & settings','⚙']]
   const labelTradition=TRADITIONS.find(t=>t.value===profile.tradition)?.label || 'Not selected'
   const resultCount=result?.recommendations?.length ?? localFindings.length
   const projectTotal=(workspace.projects||[]).reduce((n,x)=>n+(Number(x.estimate)||0),0)
@@ -141,16 +143,17 @@ export default function App() {
   function exportWorkspace(){const blob=new Blob([JSON.stringify({application:'Harmonious Home',version:4,exportedAt:new Date().toISOString(),profile,history,workspace},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='harmonious-home-backup.json';a.click();URL.revokeObjectURL(url);notify('Full workspace backup exported')}
   function importWorkspace(e){const file=e.target.files?.[0];if(!file)return;if(file.size>5*1024*1024){notify('Backup files must be smaller than 5 MB');e.target.value='';return}const reader=new FileReader();reader.onload=()=>{try{const data=JSON.parse(reader.result);if(data.application!=='Harmonious Home')throw new Error('This is not a Harmonious Home backup');if(data.profile)setProfile({...blank,...data.profile});if(Array.isArray(data.history))setHistory(data.history.slice(0,100));if(data.workspace)setWorkspace({...workspace,...safeWorkspace(data.workspace)});notify('Backup restored successfully')}catch(err){notify(err.message||'Could not read backup')}};reader.readAsText(file);e.target.value=''}
 
-  return <div className="app">
+  return <div className={`app ${sidebarCollapsed?'sidebar-collapsed':''}`}>
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">H</div><div><b>harmonious<span>.</span></b><small>HOME INTELLIGENCE</small></div></div>
+      <div className="brand"><div className="brand-mark">H</div><div className="brand-copy"><b>harmonious<span>.</span></b><small>HOME INTELLIGENCE</small></div><button className="sidebar-toggle" type="button" onClick={()=>setSidebarCollapsed(v=>{localStorage.setItem('hh-sidebar-collapsed',v?'0':'1');return !v})} title={sidebarCollapsed?'Expand navigation':'Collapse navigation'} aria-label={sidebarCollapsed?'Expand navigation':'Collapse navigation'}>{sidebarCollapsed?<PanelLeftOpen size={17}/>:<PanelLeftClose size={17}/>}</button></div>
       <div className="workspace-label">WORKSPACE</div>
-      <nav>{nav.map(([id,label,ico])=><button key={id} type="button" aria-current={page===id?'page':undefined} className={page===id?'nav-item active':'nav-item'} onClick={()=>id==='assessment'?start():setPage(id)}><span>{ico}</span>{label}{id==='history'&&history.length>0&&<em>{history.length}</em>}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="status-card"><span className={`status-dot ${health?.status==='ok'?'':'offline'}`}></span><div><b>{health?.status==='ok'?'Systems operational':'Local mode available'}</b><small>{health?.groqConfigured?'AI synthesis enabled':'Deterministic engine ready'}</small></div></div><div className="side-note">Thoughtful spaces.<br/>Grounded recommendations.</div></div>
+      <nav>{nav.map(([id,label,ico])=><button key={id} type="button" title={sidebarCollapsed?label:undefined} aria-current={page===id?'page':undefined} className={page===id?'nav-item active':'nav-item'} onClick={()=>id==='assessment'?start():setPage(id)}><span>{ico}</span>{label}{id==='history'&&history.length>0&&<em>{history.length}</em>}</button>)}</nav>
+      <div className="sidebar-bottom"><div className="status-card"><span className={`status-dot ${health?.status==='ok'?'':'offline'}`}></span><div><b>{health?.status==='ok'?'Systems operational':'Local mode available'}</b><small>{health?.knowledgeConfigured?'Knowledge base ready':health?.groqConfigured?'AI synthesis enabled':'Deterministic engine ready'}</small></div></div><div className="side-note">Thoughtful spaces.<br/>Grounded recommendations.</div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div className="crumb"><a href="/app/overview" onClick={e=>{e.preventDefault();setPage('overview')}}>Harmonious Home</a> <span>/</span> {nav.find(n=>n[0]===page)?.[1] || 'Assessment'}</div><div className="top-actions"><span className="privacy"><Icon>◈</Icon> Household workspace</span><button type="button" className="audio-control" aria-pressed={audioEnabled} title="Toggle interface sounds" onClick={()=>setAudioEnabled(!audioEnabled)}>{audioEnabled?<Volume2 size={15}/>:<VolumeX size={15}/>} <span>Sound {audioEnabled?'on':'off'}</span></button><AzureNarrator onNotice={notify}/><button className="avatar" title="Accounts and household" onClick={()=>setPage('account')}>A</button></div></header><div className="sr-only" aria-live="polite">{routeAnnouncement}</div>
+      <header className="topbar"><div className="crumb"><a href="/app/overview" onClick={e=>{e.preventDefault();setPage('overview')}}>Harmonious Home</a> <span>/</span> {nav.find(n=>n[0]===page)?.[1] || 'Assessment'}</div><div className="top-actions"><span className="privacy"><Icon>◈</Icon> Household workspace</span><button type="button" className="audio-control" aria-pressed={audioEnabled} title="Toggle interface sounds" onClick={()=>setAudioEnabled(!audioEnabled)}>{audioEnabled?<Volume2 size={15}/>:<VolumeX size={15}/>} <span>Sound {audioEnabled?'on':'off'}</span></button><KokoroNarrator onNotice={notify}/><button className="avatar" title="Accounts and household" onClick={()=>setPage('account')}>A</button></div></header><div className="sr-only" aria-live="polite">{routeAnnouncement}</div>
       <AnimatePresence mode="wait" initial={false}><motion.div key={page} className="content route-transition" initial={prefersReducedMotion?false:{opacity:0,y:12,filter:'blur(3px)'}} animate={{opacity:1,y:0,filter:'blur(0px)'}} exit={prefersReducedMotion?{opacity:1}:{opacity:0,y:-7}} transition={{duration:prefersReducedMotion?0.01:0.24,ease:[0.22,1,0.36,1]}}>
+        {page==='assistant'&&<KnowledgeAssistant/>}
         {page==='overview'&&<div className="animate-in">
           <section className="hero"><div className="hero-copy"><div className="eyebrow"><span className="eyebrow-line"></span> A MORE CONSIDERED WAY TO LIVE</div><h1>Your home,<br/><i>in better balance.</i></h1><p>Understand the way your space works, uncover opportunities and create a home that feels more supportive — one thoughtful change at a time.</p><div className="hero-actions"><button className="btn btn-dark" onClick={start}>Start home assessment <span>↗</span></button><button className="text-btn" onClick={()=>setPage('layout')}>Explore the layout <span>→</span></button></div></div><div className="hero-art"><div className="sun"></div><div className="art-orbit orbit-one"></div><div className="art-orbit orbit-two"></div><div className="art-house"><div className="roof"></div><div className="house-body"><div className="window"></div><div className="door"></div><div className="plant">♧</div></div><div className="ground"></div></div><div className="art-caption">SPACE · LIGHT · FLOW</div></div></section>
           <div className="section-heading"><div><div className="eyebrow muted">YOUR HOME AT A GLANCE</div><h2>A little more clarity.</h2></div><span className="updated">Saved automatically on this device</span></div>
@@ -192,7 +195,7 @@ export default function App() {
       </motion.div></AnimatePresence>
       {guideOpen&&<aside className="home-guide" aria-label="Home guide"><div className="guide-head"><div><span className="form-kicker">HARMONIOUS GUIDE</span><b>Let's make a little progress.</b></div><button type="button" className="icon-button" onClick={()=>setGuideOpen(false)} aria-label="Close guide">×</button></div><div className="guide-illustration" aria-hidden="true"><svg viewBox="0 0 260 112"><circle cx="211" cy="25" r="18" fill="#ead8aa"/><path d="M18 94 92 30l72 64" fill="none" stroke="#82977a" strokeWidth="5" strokeLinecap="round"/><path d="M51 94V61l41-35 42 35v33" fill="#e8eee3" stroke="#82977a" strokeWidth="4"/><rect x="84" y="65" width="20" height="29" rx="2" fill="#c6d2bb"/><path d="M171 94q8-28 19-18t15 18" fill="none" stroke="#a8b89e" strokeWidth="4"/><path d="M191 78q-5-18 9-20 1 13-9 20" fill="#a8b89e"/></svg></div><p>{['Start with one room. A short assessment helps identify practical improvements without requiring perfect measurements.','Capture one small improvement as a project, then give it a realistic budget and priority.','Set a recurring maintenance reminder so small jobs do not become expensive surprises.'][guideStep]}</p><div className="guide-actions"><button className="btn btn-light" onClick={()=>setGuideStep(s=>(s+1)%3)}>Another tip ↻</button><button className="btn btn-dark" onClick={()=>{setGuideOpen(false);setPage(['assessment','projects','maintenance'][guideStep])}}>Open this module ↗</button></div></aside>}<button type="button" className="guide-launcher" onClick={()=>setGuideOpen(v=>!v)} aria-expanded={guideOpen}><span>✦</span> Home guide</button>
       <WorkspaceHub workspace={workspace} setWorkspace={setWorkspace} setPage={setPage} notify={notify}/>
-      <footer className="app-footer"><span>HARMONIOUS HOME</span><span>Traditions kept distinct · Safety before symbolism</span><span>VERSION 4.6.0</span></footer>
+      <footer className="app-footer"><span>HARMONIOUS HOME</span><span>Traditions kept distinct · Safety before symbolism</span><span>VERSION 4.8.0</span></footer>
     </main>
     {(loading||toolBusy)&&<div className="loading-screen" role="status" aria-live="polite"><div className="loading-card"><div className="loading-orbit"/><b>{loading?'Reviewing your home':'Running your home tools'}</b><p>{loading?'Checking your answers, applying the included safety constraints and preparing your report.':'Gathering the requested information and validating the result.'}</p><div className="loading-progress"><i/></div></div></div>}
   </div>
