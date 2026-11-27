@@ -1,6 +1,6 @@
 {
-  "name": "harmonious-home-demo",
-  "version": "2.0.0",
+  "name": "harmonious-home",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,21 +10,32 @@
     "start": "node server.js",
     "preview": "vite preview",
     "test": "node --test",
-    "check": "npm run test && npm run build"
+    "check": "npm run test && npm run build",
+    "db:check": "node -e \"console.log(\\\"Database schema is applied automatically at server startup\\\")\""
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
+    "express-rate-limit": "^7.5.0",
     "groq-sdk": "^0.9.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.3",
+    "pg": "^8.13.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "web-push": "^3.6.7",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "vite": "^5.4.11"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }

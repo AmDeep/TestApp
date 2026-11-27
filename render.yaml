@@ -1,8 +1,14 @@
+databases:
+  - name: harmonious-home-db
+    databaseName: harmonious_home
+    user: harmonious_home
+    plan: basic-256mb
+
 services:
   - type: web
     name: harmonious-home
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
@@ -11,7 +17,27 @@ services:
         value: "20"
       - key: NODE_ENV
         value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: harmonious-home-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
         value: openai/gpt-oss-20b
+      - key: APP_URL
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        value: mailto:admin@example.com
+      - key: SCHEDULER_TIMEZONE
+        value: America/Toronto

@@ -3,111 +3,112 @@ import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import dotenv from 'dotenv'
+import helmet from 'helmet'
+import { rateLimit } from 'express-rate-limit'
+import cookieParser from 'cookie-parser'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import { Pool } from 'pg'
+import { Server as SocketServer } from 'socket.io'
+import { createServer } from 'http'
+import cron from 'node-cron'
+import webpush from 'web-push'
+import { randomBytes, createHash } from 'crypto'
 import { evaluateHomeRules, assessmentCompleteness, getMissingQuestions, getDoNotList } from './src/domain.js'
 import { runAssessmentAgents } from './src/agents.js'
+import { nextMaintenanceDate } from './src/maintenance.js'
 
 dotenv.config()
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const app = express()
-const PORT = Number(process.env.PORT || 3000)
-const GROQ_API_KEY = process.env.GROQ_API_KEY || ''
-const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b'
+const app = express(), httpServer = createServer(app)
+const PORT = Number(process.env.PORT || 3000), JWT_SECRET = process.env.JWT_SECRET || ''
+const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }, max: 10 }) : null
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '', GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b'
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(x=>x.trim()).filter(Boolean)
-
-app.disable('x-powered-by')
-app.use(cors({origin: allowedOrigins.length ? allowedOrigins : true}))
-app.use(express.json({limit:'32kb',strict:true}))
-app.use((req,res,next)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');next()})
-
-// Lightweight per-process abuse guard. Use a managed gateway for multi-instance production.
-const hits = new Map()
-app.use('/api', (req,res,next)=>{
-  const key=req.ip || 'unknown', now=Date.now(), entry=hits.get(key) || {count:0,start:now}
-  if(now-entry.start>60000){entry.count=0;entry.start=now}
-  entry.count++;hits.set(key,entry)
-  if(entry.count>90)return res.status(429).json({error:'Too many requests. Please wait a moment and retry.'})
-  next()
-})
-
+const io = new SocketServer(httpServer, { cors: { origin: allowedOrigins.length ? allowedOrigins : true, credentials: true } })
+app.disable('x-powered-by'); app.set('trust proxy',1); app.use(rateLimit({windowMs:15*60*1000,limit:300,standardHeaders:'draft-7',legacyHeaders:false,skip: req=>!req.path.startsWith('/api')})); app.use('/api/auth',rateLimit({windowMs:15*60*1000,limit:20,standardHeaders:'draft-7',legacyHeaders:false})); app.use(helmet({ contentSecurityPolicy: false })); app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : true, credentials: true })); app.use(cookieParser()); app.use(express.json({limit:'2mb',strict:true}))
+app.use('/api', (req,res,next)=>{res.setHeader('Cache-Control','no-store');next()})
+const cookieOpts = { httpOnly:true, secure:process.env.NODE_ENV==='production', sameSite:'lax', path:'/' }
+const hash = value => createHash('sha256').update(value).digest('hex')
+const sign = user => jwt.sign({ sub:user.id, email:user.email }, JWT_SECRET, { expiresIn:'7d', issuer:'harmonious-home' })
+const q = (sql,params=[]) => { if(!pool) throw Object.assign(new Error('Cloud database is not configured.'),{status:503}); return params.length ? pool.query(sql,params) : pool.query(sql) }
+async function initDb(){
+ if(!pool) return
+ await q(`CREATE TABLE IF NOT EXISTS users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),email text UNIQUE NOT NULL,password_hash text NOT NULL,display_name text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
+ CREATE TABLE IF NOT EXISTS households(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text NOT NULL,created_by uuid NOT NULL REFERENCES users(id),created_at timestamptz NOT NULL DEFAULT now());
+ CREATE TABLE IF NOT EXISTS household_members(household_id uuid REFERENCES households(id) ON DELETE CASCADE,user_id uuid REFERENCES users(id) ON DELETE CASCADE,role text NOT NULL CHECK(role IN ('owner','admin','editor','viewer')),joined_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(household_id,user_id));
+ CREATE TABLE IF NOT EXISTS household_invites(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),household_id uuid REFERENCES households(id) ON DELETE CASCADE,email text NOT NULL,role text NOT NULL CHECK(role IN ('admin','editor','viewer')),token_hash text UNIQUE NOT NULL,expires_at timestamptz NOT NULL,accepted_at timestamptz,created_by uuid REFERENCES users(id));
+ CREATE TABLE IF NOT EXISTS workspace_state(household_id uuid PRIMARY KEY REFERENCES households(id) ON DELETE CASCADE,version integer NOT NULL DEFAULT 1,payload jsonb NOT NULL DEFAULT '{}'::jsonb,updated_by uuid REFERENCES users(id),updated_at timestamptz NOT NULL DEFAULT now());
+ CREATE TABLE IF NOT EXISTS password_resets(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid REFERENCES users(id) ON DELETE CASCADE,token_hash text UNIQUE NOT NULL,expires_at timestamptz NOT NULL,used_at timestamptz);
+ CREATE TABLE IF NOT EXISTS push_subscriptions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid REFERENCES users(id) ON DELETE CASCADE,endpoint text UNIQUE NOT NULL,subscription jsonb NOT NULL,created_at timestamptz DEFAULT now());
+ CREATE TABLE IF NOT EXISTS notification_jobs(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),household_id uuid REFERENCES households(id) ON DELETE CASCADE,task_id text NOT NULL,due_at date NOT NULL,sent_at timestamptz,UNIQUE(household_id,task_id,due_at));
+ CREATE TABLE IF NOT EXISTS audit_log(id bigserial PRIMARY KEY,household_id uuid REFERENCES households(id) ON DELETE CASCADE,user_id uuid REFERENCES users(id),action text NOT NULL,details jsonb NOT NULL DEFAULT '{}'::jsonb,created_at timestamptz DEFAULT now());`)
+}
+async function auth(req,res,next){try{const token=req.cookies.hh_session || (req.headers.authorization||'').replace(/^Bearer /,'');if(!token) return res.status(401).json({error:'Sign in to continue.'});const data=jwt.verify(token,JWT_SECRET,{issuer:'harmonious-home'});const {rows}=await q('SELECT id,email,display_name FROM users WHERE id=$1',[data.sub]);if(!rows[0])return res.status(401).json({error:'Session is no longer valid.'});req.user=rows[0];next()}catch(e){return res.status(401).json({error:'Your session has expired. Please sign in again.'})}}
+async function membership(req,res,next){try{const {rows}=await q(`SELECT h.id household_id,h.name,m.role FROM household_members m JOIN households h ON h.id=m.household_id WHERE m.user_id=$1 ORDER BY m.joined_at DESC LIMIT 1`,[req.user.id]);if(!rows[0])return res.status(404).json({error:'No household workspace found.'});req.household=rows[0];next()}catch(e){next(e)}}
+const allow = (...roles) => (req,res,next)=>roles.includes(req.household?.role)?next():res.status(403).json({error:'Your household role does not permit this action.'})
 const PROFILE_KEYS = new Set(['city','propertyType','stage','tradition','northKnown','entranceDirection','kitchenLocation','bedSeesDoor','centreUse','ventilation','daylight','climateConcerns','clutter','goals','constraints','freeText'])
-const TOOL_REGISTRY = {
-  evaluate_home_rules: profile => evaluateHomeRules(profile),
-  get_missing_questions: profile => getMissingQuestions(profile),
-  get_safety_constraints: () => getDoNotList(),
-  calculate_completeness: profile => assessmentCompleteness(profile),
-}
-function validateProfile(input){
-  if(!input || typeof input!=='object' || Array.isArray(input))return 'A valid profile object is required.'
-  const unknown=Object.keys(input).filter(k=>!PROFILE_KEYS.has(k))
-  if(unknown.length)return `Unsupported profile fields: ${unknown.join(', ')}`
-  for(const key of ['city','propertyType','stage','tradition','northKnown','entranceDirection','kitchenLocation','bedSeesDoor','centreUse','ventilation','daylight','freeText']){
-    if(input[key]!==undefined && typeof input[key]!=='string')return `${key} must be text.`
-  }
-  for(const key of ['climateConcerns','clutter','goals','constraints']){
-    if(input[key]!==undefined && (!Array.isArray(input[key]) || input[key].length>30 || input[key].some(v=>typeof v!=='string')))return `${key} must be a short list of text values.`
-  }
-  if(input.freeText && input.freeText.length>1200)return 'Additional notes are limited to 1,200 characters.'
-  return null
-}
+const TOOL_REGISTRY = { evaluate_home_rules:p=>evaluateHomeRules(p),get_missing_questions:p=>getMissingQuestions(p),get_safety_constraints:()=>getDoNotList(),calculate_completeness:p=>assessmentCompleteness(p) }
+function validateProfile(input){if(!input||typeof input!=='object'||Array.isArray(input))return 'A valid profile object is required.';const unknown=Object.keys(input).filter(k=>!PROFILE_KEYS.has(k));if(unknown.length)return `Unsupported profile fields: ${unknown.join(', ')}`;for(const k of PROFILE_KEYS)if(input[k]!==undefined&&typeof input[k]!=='string'&&!['climateConcerns','clutter','goals','constraints'].includes(k))return `${k} must be text.`;for(const k of ['climateConcerns','clutter','goals','constraints'])if(input[k]!==undefined&&(!Array.isArray(input[k])||input[k].length>30||input[k].some(v=>typeof v!=='string')))return `${k} must be a short list.`;if((input.freeText||'').length>1200)return 'Additional notes are limited to 1,200 characters.';return null}
+app.get('/api/health',async(_req,res)=>{let db='not-configured';if(pool){try{await q('SELECT 1');db='connected'}catch{db='error'}}res.json({status:db==='connected'?'ok':'degraded',service:'harmonious-home',version:'4.0.0',database:db,authConfigured:Boolean(JWT_SECRET),groqConfigured:Boolean(GROQ_API_KEY),pushConfigured:Boolean(process.env.VAPID_PUBLIC_KEY&&process.env.VAPID_PRIVATE_KEY),emailConfigured:Boolean(process.env.RESEND_API_KEY&&process.env.MAIL_FROM),tools:Object.keys(TOOL_REGISTRY)})})
+app.post('/api/auth/register',async(req,res,next)=>{try{if(!pool)return res.status(503).json({error:'Cloud database is not configured.'});if(JWT_SECRET.length<32)return res.status(503).json({error:'Authentication is not configured. Set a JWT_SECRET of at least 32 characters.'});const {email,password,displayName}=req.body||{};if(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)||email.length>254)return res.status(400).json({error:'Enter a valid email address.'});if(typeof password!=='string'||password.length<10||password.length>128)return res.status(400).json({error:'Password must be 10–128 characters.'});if(typeof displayName!=='string'||displayName.trim().length<2||displayName.length>80)return res.status(400).json({error:'Enter a name between 2 and 80 characters.'});const client=await pool.connect();try{await client.query('BEGIN');const u=(await client.query('INSERT INTO users(email,password_hash,display_name) VALUES($1,$2,$3) RETURNING id,email,display_name',[email.toLowerCase().trim(),await bcrypt.hash(password,12),displayName.trim()])).rows[0];const h=(await client.query('INSERT INTO households(name,created_by) VALUES($1,$2) RETURNING id,name',[`${displayName.trim()}'s home`,u.id])).rows[0];await client.query('INSERT INTO household_members(household_id,user_id,role) VALUES($1,$2,\'owner\')',[h.id,u.id]);await client.query("INSERT INTO workspace_state(household_id,payload,updated_by) VALUES($1,'{}'::jsonb,$2)",[h.id,u.id]);await client.query('COMMIT');res.cookie('hh_session',sign(u),cookieOpts).json({user:u,household:{...h,role:'owner'}})}catch(e){await client.query('ROLLBACK');if(e.code==='23505')return res.status(409).json({error:'An account with this email already exists.'});throw e}finally{client.release()}}catch(e){next(e)}})
+app.post('/api/auth/login',async(req,res,next)=>{try{if(!pool||JWT_SECRET.length<32)return res.status(503).json({error:'Cloud authentication is not configured.'});const {email,password}=req.body||{};const {rows}=await q('SELECT * FROM users WHERE email=$1',[String(email||'').toLowerCase().trim()]);if(!rows[0]||!await bcrypt.compare(String(password||''),rows[0].password_hash))return res.status(401).json({error:'Email or password is incorrect.'});const u=rows[0];res.cookie('hh_session',sign(u),cookieOpts).json({user:{id:u.id,email:u.email,display_name:u.display_name}})}catch(e){next(e)}})
+app.patch('/api/auth/profile',auth,async(req,res,next)=>{try{const name=String(req.body?.displayName||'').trim();if(name.length<2||name.length>80)return res.status(400).json({error:'Name must be between 2 and 80 characters.'});const {rows}=await q('UPDATE users SET display_name=$1,updated_at=now() WHERE id=$2 RETURNING id,email,display_name',[name,req.user.id]);res.json({user:rows[0]})}catch(e){next(e)}})
+app.post('/api/auth/change-password',auth,async(req,res,next)=>{try{const {currentPassword,newPassword}=req.body||{};const {rows}=await q('SELECT password_hash FROM users WHERE id=$1',[req.user.id]);if(!await bcrypt.compare(String(currentPassword||''),rows[0].password_hash))return res.status(400).json({error:'Current password is incorrect.'});if(typeof newPassword!=='string'||newPassword.length<10||newPassword.length>128)return res.status(400).json({error:'New password must be 10–128 characters.'});await q('UPDATE users SET password_hash=$1,updated_at=now() WHERE id=$2',[await bcrypt.hash(newPassword,12),req.user.id]);res.json({ok:true})}catch(e){next(e)}})
+app.post('/api/auth/logout',(req,res)=>res.clearCookie('hh_session',cookieOpts).json({ok:true}))
+app.get('/api/auth/me',auth,async(req,res,next)=>{try{const {rows}=await q(`SELECT h.id household_id,h.name,m.role FROM household_members m JOIN households h ON h.id=m.household_id WHERE m.user_id=$1 ORDER BY m.joined_at DESC LIMIT 1`,[req.user.id]);res.json({user:req.user,household:rows[0]||null})}catch(e){next(e)}})
+app.post('/api/auth/forgot-password',async(req,res,next)=>{try{const email=String(req.body?.email||'').toLowerCase().trim(),{rows}=await q('SELECT id,email FROM users WHERE email=$1',[email]);if(rows[0]){const token=randomBytes(32).toString('hex');await q('INSERT INTO password_resets(user_id,token_hash,expires_at) VALUES($1,$2,now()+interval \'30 minutes\')',[rows[0].id,hash(token)]);if(process.env.RESEND_API_KEY&&process.env.MAIL_FROM&&process.env.APP_URL){await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({from:process.env.MAIL_FROM,to:[email],subject:'Reset your Harmonious Home password',html:`<p>Use this one-time link to reset your password:</p><p><a href="${process.env.APP_URL||'https://example.com'}/?reset=${token}">Reset password</a></p><p>This link expires in 30 minutes.</p>`})})}}res.json({message:'If that account exists and email delivery is configured, password reset instructions will be sent.'})}catch(e){next(e)}})
+app.post('/api/auth/reset-password',async(req,res,next)=>{try{const {token,password}=req.body||{};if(typeof password!=='string'||password.length<10||password.length>128)return res.status(400).json({error:'Password must be 10–128 characters.'});const {rows}=await q('SELECT * FROM password_resets WHERE token_hash=$1 AND used_at IS NULL AND expires_at>now()',[hash(String(token||''))]);if(!rows[0])return res.status(400).json({error:'This reset link is invalid or expired.'});await q('UPDATE users SET password_hash=$1,updated_at=now() WHERE id=$2',[await bcrypt.hash(password,12),rows[0].user_id]);await q('UPDATE password_resets SET used_at=now() WHERE user_id=$1 AND used_at IS NULL',[rows[0].user_id]);res.json({ok:true})}catch(e){next(e)}})
+app.get('/api/household',auth,membership,async(req,res,next)=>{try{const {rows}=await q(`SELECT u.id,u.email,u.display_name,m.role,m.joined_at FROM household_members m JOIN users u ON u.id=m.user_id WHERE m.household_id=$1 ORDER BY m.joined_at`,[req.household.household_id]);res.json({household:req.household,members:rows})}catch(e){next(e)}})
+app.post('/api/household/invites',auth,membership,allow('owner','admin'),async(req,res,next)=>{try{const email=String(req.body?.email||'').toLowerCase().trim(),role=req.body?.role;if(!/^\S+@\S+\.\S+$/.test(email)||!['admin','editor','viewer'].includes(role))return res.status(400).json({error:'A valid email and role are required.'});const token=randomBytes(32).toString('hex');await q('INSERT INTO household_invites(household_id,email,role,token_hash,expires_at,created_by) VALUES($1,$2,$3,$4,now()+interval \'7 days\',$5)',[req.household.household_id,email,role,hash(token),req.user.id]);let delivery='Invitation created';if(process.env.RESEND_API_KEY&&process.env.MAIL_FROM&&process.env.APP_URL){await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({from:process.env.MAIL_FROM,to:[email],subject:'You are invited to a Harmonious Home household',html:`<p>Join ${req.household.name}:</p><p><a href="${process.env.APP_URL||'https://example.com'}/?invite=${token}">Accept invitation</a></p>`})});delivery='Invitation email requested'}res.status(201).json({ok:true,delivery})}catch(e){next(e)}})
+app.post('/api/household/accept',auth,async(req,res,next)=>{try{const token=String(req.body?.token||''),client=await pool.connect();try{await client.query('BEGIN');const inv=(await client.query('SELECT * FROM household_invites WHERE token_hash=$1 AND expires_at>now() AND accepted_at IS NULL FOR UPDATE',[hash(token)])).rows[0];if(!inv||inv.email!==req.user.email)return res.status(400).json({error:'Invitation is invalid, expired or addressed to another account.'});await client.query('INSERT INTO household_members(household_id,user_id,role) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[inv.household_id,req.user.id,inv.role]);await client.query('UPDATE household_invites SET accepted_at=now() WHERE id=$1',[inv.id]);await client.query('COMMIT');res.json({ok:true})}catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}}catch(e){next(e)}})
+app.patch('/api/household/members/:id',auth,membership,allow('owner','admin'),async(req,res,next)=>{try{const role=req.body?.role;if(!['admin','editor','viewer'].includes(role))return res.status(400).json({error:'Invalid role.'});if(req.params.id===req.user.id)return res.status(400).json({error:'You cannot change your own role.'});const r=await q("UPDATE household_members SET role=$1 WHERE household_id=$2 AND user_id=$3 AND role<>'owner' RETURNING user_id",[role,req.household.household_id,req.params.id]);if(!r.rowCount)return res.status(404).json({error:'Member not found or owner role is protected.'});io.to(`household:${req.household.household_id}`).emit('members:changed');res.json({ok:true})}catch(e){next(e)}})
+app.delete('/api/household/members/:id',auth,membership,allow('owner','admin'),async(req,res,next)=>{try{if(req.params.id===req.user.id)return res.status(400).json({error:'Use leave-household workflow instead.'});const r=await q("DELETE FROM household_members WHERE household_id=$1 AND user_id=$2 AND role<>'owner'",[req.household.household_id,req.params.id]);if(!r.rowCount)return res.status(404).json({error:'Member not found or owner cannot be removed.'});io.to(`household:${req.household.household_id}`).emit('members:changed');res.json({ok:true})}catch(e){next(e)}})
+app.get('/api/workspace',auth,membership,async(req,res,next)=>{try{const {rows}=await q('SELECT version,payload,updated_at FROM workspace_state WHERE household_id=$1',[req.household.household_id]);res.json({version:rows[0]?.version||1,payload:rows[0]?.payload||{},updatedAt:rows[0]?.updated_at})}catch(e){next(e)}})
+app.put('/api/workspace',auth,membership,allow('owner','admin','editor'),async(req,res,next)=>{try{const payload=req.body?.payload,version=Number(req.body?.version);if(!payload||typeof payload!=='object'||Array.isArray(payload)||JSON.stringify(payload).length>1500000)return res.status(400).json({error:'Workspace payload is invalid or exceeds 1.5 MB.'});const client=await pool.connect();try{await client.query('BEGIN');const current=(await client.query('SELECT version FROM workspace_state WHERE household_id=$1 FOR UPDATE',[req.household.household_id])).rows[0];if(current&&Number.isFinite(version)&&version!==current.version){await client.query('ROLLBACK');return res.status(409).json({error:'This workspace changed elsewhere. Refresh before saving.',currentVersion:current.version})}const saved=(await client.query(`INSERT INTO workspace_state(household_id,version,payload,updated_by,updated_at) VALUES($1,1,$2,$3,now()) ON CONFLICT(household_id) DO UPDATE SET version=workspace_state.version+1,payload=EXCLUDED.payload,updated_by=EXCLUDED.updated_by,updated_at=now() RETURNING version,updated_at`,[req.household.household_id,JSON.stringify(payload),req.user.id])).rows[0];await client.query('INSERT INTO audit_log(household_id,user_id,action,details) VALUES($1,$2,$3,$4)',[req.household.household_id,req.user.id,'workspace.updated',{version:saved.version}]);await client.query('COMMIT');io.to(`household:${req.household.household_id}`).emit('workspace:updated',{version:saved.version,updatedBy:req.user.display_name});res.json({version:saved.version,updatedAt:saved.updated_at})}catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}}catch(e){next(e)}})
+app.post('/api/push/subscribe',auth,async(req,res,next)=>{try{const sub=req.body?.subscription;if(!sub?.endpoint||!sub?.keys?.p256dh||!sub?.keys?.auth)return res.status(400).json({error:'Invalid push subscription.'});await q('INSERT INTO push_subscriptions(user_id,endpoint,subscription) VALUES($1,$2,$3) ON CONFLICT(endpoint) DO UPDATE SET user_id=EXCLUDED.user_id,subscription=EXCLUDED.subscription',[req.user.id,sub.endpoint,JSON.stringify(sub)]);res.json({ok:true})}catch(e){next(e)}})
+app.get('/api/push/key',(_req,res)=>res.json({publicKey:process.env.VAPID_PUBLIC_KEY||null}))
+app.get('/api/tools',(_req,res)=>res.json({tools:Object.keys(TOOL_REGISTRY)}))
+app.post('/api/tools/:tool',(req,res)=>{const fn=TOOL_REGISTRY[req.params.tool];if(!fn)return res.status(404).json({error:'Unknown tool'});const profile=req.body?.profile||{},err=validateProfile(profile);if(err)return res.status(400).json({error:err});try{res.json({tool:req.params.tool,result:fn(profile)})}catch{return res.status(500).json({error:'Tool execution failed'})}})
+app.post('/api/assess',async(req,res)=>{const profile=req.body?.profile,validation=validateProfile(profile);if(validation)return res.status(400).json({error:validation});try{const findings=TOOL_REGISTRY.evaluate_home_rules(profile),completeness=TOOL_REGISTRY.calculate_completeness(profile),missing=TOOL_REGISTRY.get_missing_questions(profile),doNot=TOOL_REGISTRY.get_safety_constraints();let agentResult=null,agentError=null,mode='deterministic rules-only';if(GROQ_API_KEY){try{agentResult=await runAssessmentAgents({profile,findings,missing,model:GROQ_MODEL,apiKey:GROQ_API_KEY});mode='deterministic rules + bounded AI agents'}catch(e){agentError='AI synthesis unavailable; deterministic results retained.'}}res.json({mode,completeness,missing,doNot,findings,recommendations:agentResult?.recommendations||findings,headline:agentResult?.headline||'Your home assessment',overallNote:agentResult?.overallNote||'A first-pass review based on deterministic rule matches.',agentMeta:agentResult?.meta||{agentRuns:[],toolCalls:Object.keys(TOOL_REGISTRY)},agentError,limitations:['Illustrative rules, not expert-certified.','No full classical Flying Stars / Luopan calculation.','Safety, ventilation and accessibility outrank symbolic preference.','Verify significant building changes with qualified professionals.']})}catch(e){console.error(e);res.status(500).json({error:'Assessment could not be completed.'})}})
 
-app.get('/api/health',(_req,res)=>res.json({
-  status:'ok',service:'harmonious-home',version:'2.0.0',
-  groqConfigured:Boolean(GROQ_API_KEY),model:GROQ_MODEL,
-  mode:GROQ_API_KEY?'deterministic rules + three bounded AI roles':'deterministic rules-only',
-  tools:Object.keys(TOOL_REGISTRY),
-}))
-app.get('/api/tools',(_req,res)=>res.json({tools:[
-  {name:'evaluate_home_rules',description:'Evaluate deterministic domain rules against a profile.'},
-  {name:'get_missing_questions',description:'Identify missing context that limits assessment confidence.'},
-  {name:'get_safety_constraints',description:'Return non-negotiable safety constraints.'},
-  {name:'calculate_completeness',description:'Calculate profile completeness from supported fields.'},
-]}))
-app.post('/api/tools/:tool', (req,res)=>{
-  const fn=TOOL_REGISTRY[req.params.tool]
-  if(!fn)return res.status(404).json({error:'Unknown tool'})
-  const profile=req.body?.profile || {}
-  const validation=validateProfile(profile)
-  if(validation)return res.status(400).json({error:validation})
-  try{return res.json({tool:req.params.tool,result:fn(profile)})}
-  catch{return res.status(500).json({error:'Tool execution failed'})}
-})
-app.post('/api/assess',async(req,res)=>{
-  const profile=req.body?.profile
-  const validation=validateProfile(profile)
-  if(validation)return res.status(400).json({error:validation})
-  try{
-    // Agent tool calls: deterministic engine, missing-context analyser and safety guard.
-    const findings=TOOL_REGISTRY.evaluate_home_rules(profile)
-    const completeness=TOOL_REGISTRY.calculate_completeness(profile)
-    const missing=TOOL_REGISTRY.get_missing_questions(profile)
-    const doNot=TOOL_REGISTRY.get_safety_constraints()
-    let agentResult=null,agentError=null,mode='deterministic rules-only'
-    if(GROQ_API_KEY){
-      try{
-        agentResult=await runAssessmentAgents({profile,findings,missing,model:GROQ_MODEL,apiKey:GROQ_API_KEY})
-        mode='deterministic rules + bounded AI agents'
-      }catch(err){agentError='AI synthesis unavailable; deterministic results retained.';console.error('Agent pipeline error:',err.message)}
+// Durable daily maintenance scheduler. Delivery is idempotent per household/task/due date.
+if(pool&&process.env.VAPID_PUBLIC_KEY&&process.env.VAPID_PRIVATE_KEY){webpush.setVapidDetails(process.env.VAPID_SUBJECT||'mailto:admin@example.com',process.env.VAPID_PUBLIC_KEY,process.env.VAPID_PRIVATE_KEY)}
+async function sendDueReminders(){
+ if(!pool)return
+ try{
+  const {rows}=await q(`SELECT h.id household_id,h.name,w.payload,json_agg(json_build_object('id',u.id,'email',u.email)) recipients FROM households h JOIN workspace_state w ON w.household_id=h.id JOIN household_members m ON m.household_id=h.id JOIN users u ON u.id=m.user_id WHERE m.role IN ('owner','admin','editor') GROUP BY h.id,h.name,w.payload`)
+  for(const row of rows){
+   const tasks=row.payload?.workspace?.maintenance||[]
+   for(const task of tasks){
+    if(task.done||!task.due)continue
+    const due=new Date(`${task.due}T00:00:00Z`)
+    if(due>new Date(Date.now()+86400000))continue
+    const inserted=await q('INSERT INTO notification_jobs(household_id,task_id,due_at) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING id',[row.household_id,String(task.id),task.due])
+    if(!inserted.rowCount)continue
+    let delivered=false
+    for(const recipient of row.recipients){
+     if(process.env.RESEND_API_KEY&&process.env.MAIL_FROM){
+      try{const resp=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({from:process.env.MAIL_FROM,to:[recipient.email],subject:`Home maintenance due: ${task.title}`,html:`<p>A maintenance task is due in ${row.name}.</p><p><b>${task.title}</b> · ${task.due} · ${task.room||'Whole home'}</p>`})});if(resp.ok)delivered=true}catch(e){console.error('Email reminder delivery failed:',e.message)}
+     }
+     if(process.env.VAPID_PUBLIC_KEY&&process.env.VAPID_PRIVATE_KEY){
+      const subs=await q('SELECT subscription FROM push_subscriptions WHERE user_id=$1',[recipient.id])
+      for(const sub of subs.rows){try{await webpush.sendNotification(sub.subscription,JSON.stringify({title:'Harmonious Home reminder',body:`${task.title} is due ${task.due}.`,url:'/'}));delivered=true}catch(e){if(e.statusCode===410)await q('DELETE FROM push_subscriptions WHERE user_id=$1 AND endpoint=$2',[recipient.id,sub.subscription.endpoint])}}
+     }
     }
-    res.json({
-      mode,completeness,missing,doNot,findings,
-      recommendations:agentResult?.recommendations||findings,
-      headline:agentResult?.headline||'Your home assessment',
-      overallNote:agentResult?.overallNote||'A first-pass review based on deterministic rule matches.',
-      agentMeta:agentResult?.meta||{agentRuns:[],toolCalls:Object.keys(TOOL_REGISTRY)},
-      agentError,
-      limitations:[
-        'Illustrative rules and agent prompts only — not expert-certified.',
-        'No full classical Flying Stars / Luopan calculation.',
-        'Safety, ventilation and accessibility always outrank symbolic preference.',
-        'Verify significant building changes with qualified professionals.',
-        'AI language synthesis cannot create or override deterministic findings.',
-      ],
-    })
-  }catch(err){console.error('Assessment error:',err);res.status(500).json({error:'Assessment could not be completed.'})}
-})
+    if(delivered){
+     await q('UPDATE notification_jobs SET sent_at=now() WHERE id=$1',[inserted.rows[0].id])
+     const nextDue=nextMaintenanceDate(task.due,task.frequency)
+     if(nextDue){const updatedTasks=tasks.map(t=>String(t.id)===String(task.id)?{...t,due:nextDue}:t);const updatedPayload={...row.payload,workspace:{...row.payload.workspace,maintenance:updatedTasks}};const saved=await q('UPDATE workspace_state SET payload=$1,version=version+1,updated_at=now() WHERE household_id=$2 RETURNING version',[JSON.stringify(updatedPayload),row.household_id]);io.to(`household:${row.household_id}`).emit('workspace:updated',{version:saved.rows[0]?.version,updatedBy:'Maintenance scheduler'})}
+    }else await q('DELETE FROM notification_jobs WHERE id=$1',[inserted.rows[0].id])
+   }
+  }
+ }catch(e){console.error('Reminder scheduler error:',e.message)}
+}
+cron.schedule('15 8 * * *',sendDueReminders,{timezone:process.env.SCHEDULER_TIMEZONE||'America/Toronto'})
 
-const distPath=path.join(__dirname,'dist')
-app.use(express.static(distPath,{maxAge:process.env.NODE_ENV==='production'?'1h':0}))
-app.get('*',(req,res,next)=>{if(req.path.startsWith('/api'))return next();res.sendFile(path.join(distPath,'index.html'),err=>{if(err)next(err)})})
-app.use((err,_req,res,_next)=>{if(err.type==='entity.too.large')return res.status(413).json({error:'Request body is too large.'});console.error(err);res.status(500).json({error:'Unexpected server error.'})})
-app.listen(PORT,'0.0.0.0',()=>console.log(`Harmonious Home listening on ${PORT} · ${GROQ_API_KEY?'AI configured':'rules-only mode'}`))
+io.use(async(socket,next)=>{try{const raw=socket.handshake.headers.cookie||'',token=raw.split(';').map(x=>x.trim()).find(x=>x.startsWith('hh_session='))?.split('=').slice(1).join('=');if(!token)throw new Error('unauthorized');const data=jwt.verify(token,JWT_SECRET,{issuer:'harmonious-home'});const {rows}=await q('SELECT household_id FROM household_members WHERE user_id=$1 ORDER BY joined_at DESC LIMIT 1',[data.sub]);if(!rows[0])throw new Error('no household');socket.userId=data.sub;socket.householdId=rows[0].household_id;next()}catch{next(new Error('Unauthorized'))}})
+io.on('connection',socket=>{socket.join(`household:${socket.householdId}`);socket.emit('connected',{householdId:socket.householdId})})
+const distPath=path.join(__dirname,'dist');app.use(express.static(distPath,{maxAge:process.env.NODE_ENV==='production'?'1h':0}));app.get('*',(req,res,next)=>{if(req.path.startsWith('/api'))return next();res.sendFile(path.join(distPath,'index.html'),err=>{if(err)next(err)})})
+app.use((err,_req,res,_next)=>{console.error(err);res.status(err.status||500).json({error:err.status?err.message:'Unexpected server error.'})})
+initDb().then(()=>{httpServer.listen(PORT,'0.0.0.0',()=>console.log(`Harmonious Home v4 listening on ${PORT}`));if(pool)sendDueReminders()}).catch(e=>{console.error('Database initialization failed:',e);process.exit(1)})
