@@ -1,658 +1,124 @@
-import React, { useState, useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
-  STEPS,
-  PROPERTY_TYPES,
-  TRADITIONS,
-  GOALS,
-  DIRECTIONS,
-  evaluateHomeRules,
-  assessmentCompleteness,
-  getMissingQuestions,
-  getDoNotList,
+  STEPS, PROPERTY_TYPES, TRADITIONS, GOALS, DIRECTIONS,
+  evaluateHomeRules, assessmentCompleteness, getMissingQuestions, getDoNotList,
 } from './domain.js'
 
-const initialProfile = {
-  city: '',
-  propertyType: '',
-  stage: 'Occupied',
-  tradition: '',
-  northKnown: '',
-  entranceDirection: '',
-  kitchenLocation: '',
-  bedSeesDoor: '',
-  centreUse: '',
-  ventilation: '',
-  daylight: '',
-  climateConcerns: [],
-  clutter: [],
-  goals: [],
-  constraints: [],
-  freeText: '',
+const blank = {
+  city:'', propertyType:'', stage:'Occupied', tradition:'feng_shui_form',
+  northKnown:'', entranceDirection:'', kitchenLocation:'', bedSeesDoor:'',
+  centreUse:'', ventilation:'', daylight:'', climateConcerns:[], clutter:[],
+  goals:[], constraints:[], freeText:'',
 }
+const STORE = 'harmonious-home-v2'
+const iconMap = { basics:'⌂', rooms:'▦', environment:'☼', people:'✳' }
+const safeArray = v => Array.isArray(v) ? v : []
 
-function ChipGroup({ options, value = [], onChange, multi = true }) {
-  const selected = multi ? value : value ? [value] : []
-  const toggle = (opt) => {
-    if (multi) {
-      const next = selected.includes(opt)
-        ? selected.filter((x) => x !== opt)
-        : [...selected, opt]
-      onChange(next)
-    } else {
-      onChange(opt === value ? '' : opt)
-    }
-  }
-  return (
-    <div className="chip-group">
-      {options.map((opt) => (
-        <button
-          key={opt}
-          type="button"
-          className={`chip ${selected.includes(opt) ? 'selected' : ''}`}
-          onClick={() => toggle(opt)}
-        >
-          {opt}
-        </button>
-      ))}
-    </div>
-  )
+function readStore() {
+  try { return JSON.parse(localStorage.getItem(STORE) || '{"profile":null,"history":[]}') }
+  catch { return { profile:null, history:[] } }
 }
-
-function Field({ label, hint, children }) {
-  return (
-    <div className="field">
-      <label>{label}</label>
-      {children}
-      {hint && <div className="hint">{hint}</div>}
-    </div>
-  )
+function ChipGroup({ options, value=[], onChange }) {
+  return <div className="chips">{options.map(opt => <button type="button" key={opt} className={`chip ${value.includes(opt)?'selected':''}`} aria-pressed={value.includes(opt)} onClick={() => onChange(value.includes(opt)?value.filter(x=>x!==opt):[...value,opt])}>{value.includes(opt)?'✓ ':''}{opt}</button>)}</div>
 }
+function Field({label,hint,children}) { return <label className="field"><span className="field-label">{label}</span>{children}{hint&&<small>{hint}</small>}</label> }
+function Select({value,onChange,children}) { return <select value={value||''} onChange={e=>onChange(e.target.value)}>{children}</select> }
+function Icon({children}) { return <span className="icon">{children}</span> }
 
 export default function App() {
-  const [step, setStep] = useState(-1) // -1 = landing
-  const [profile, setProfile] = useState(initialProfile)
-  const [assessed, setAssessed] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [apiResult, setApiResult] = useState(null)
-  const [apiError, setApiError] = useState(null)
+  const saved = useMemo(readStore, [])
+  const [profile,setProfile] = useState(saved.profile || blank)
+  const [history,setHistory] = useState(saved.history || [])
+  const [page,setPage] = useState('overview')
+  const [step,setStep] = useState(0)
+  const [result,setResult] = useState(null)
+  const [loading,setLoading] = useState(false)
+  const [error,setError] = useState('')
+  const [health,setHealth] = useState(null)
+  const [expanded,setExpanded] = useState({})
+  const [filter,setFilter] = useState('all')
+  const [room,setRoom] = useState('Living room')
+  const [toast,setToast] = useState('')
+  const [toolOutput,setToolOutput] = useState(null)
+  const [toolBusy,setToolBusy] = useState(false)
 
-  const update = (key, val) => setProfile((p) => ({ ...p, [key]: val }))
+  useEffect(()=>{ localStorage.setItem(STORE,JSON.stringify({profile,history})) },[profile,history])
+  useEffect(()=>{ fetch('/api/health').then(r=>r.json()).then(setHealth).catch(()=>setHealth({status:'offline'})) },[])
+  const update=(k,v)=>setProfile(p=>({...p,[k]:v}))
+  const completeness=assessmentCompleteness(profile)
+  const localFindings=useMemo(()=>evaluateHomeRules(profile),[profile])
+  const visibleRecommendations=(result?.recommendations || []).filter(f=>filter==='all'||f.priority===filter)
+  const notify=(msg)=>{setToast(msg);setTimeout(()=>setToast(''),2600)}
+  const start=()=>{setStep(0);setPage('assessment');setError('')}
+  const goBack=()=>{if(step>0)setStep(s=>s-1);else setPage('overview')}
+  const goNext=()=>{if(step<3){setStep(s=>s+1);return} runAssessment()}
 
-  // Local fallback always available
-  const localFindings = useMemo(
-    () => (assessed ? evaluateHomeRules(profile) : []),
-    [assessed, profile]
-  )
-  const completeness = useMemo(() => assessmentCompleteness(profile), [profile])
-  const missing = useMemo(() => getMissingQuestions(profile), [profile])
-  const doNot = getDoNotList()
-
-  const findings = apiResult?.recommendations || localFindings
-  const headline = apiResult?.headline || 'First-pass assessment from deterministic rules'
-  const overallNote = apiResult?.overallNote
-  const mode = apiResult?.mode || (assessed ? 'rules-only (local)' : null)
-
-  const runAssessment = async () => {
-    setLoading(true)
-    setApiError(null)
-    setApiResult(null)
-    setAssessed(true)
-
+  async function runAssessment() {
+    setLoading(true);setError('')
     try {
-      const res = await fetch('/api/assess', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile }),
-      })
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}))
-        throw new Error(errBody.error || `HTTP ${res.status}`)
-      }
-      const data = await res.json()
-      setApiResult(data)
-    } catch (err) {
-      // Fallback to pure client-side rules if server unreachable (e.g. pure Vite dev)
-      console.warn('API assess failed, using local rules:', err.message)
-      setApiError(err.message)
-      setApiResult({
-        mode: 'rules-only (client fallback)',
-        recommendations: evaluateHomeRules(profile),
-        headline: 'Assessment from local rules (API unavailable)',
-        overallNote:
-          'Could not reach the assessment API. Showing deterministic rule findings only. Start the Express server (npm start) or deploy the full app to enable Groq agents.',
-      })
-    } finally {
-      setLoading(false)
-      setStep(4)
-    }
+      const response=await fetch('/api/assess',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profile})})
+      const data=await response.json()
+      if(!response.ok) throw new Error(data.error || 'Could not complete assessment')
+      setResult(data);setPage('results')
+      const record={id:Date.now(),createdAt:new Date().toISOString(),profile:{...profile},result:data}
+      setHistory(h=>[record,...h].slice(0,20))
+    } catch(e) {
+      const findings=evaluateHomeRules(profile)
+      const fallback={mode:'local rules-only',completeness:assessmentCompleteness(profile),missing:getMissingQuestions(profile),doNot:getDoNotList(),findings,recommendations:findings,headline:'Your home assessment',overallNote:'The assessment service could not be reached. These results are generated locally from the included illustrative rule set.',limitations:['Illustrative rules only; not expert-certified.','Safety, accessibility and building performance take priority over symbolic preferences.']}
+      setResult(fallback);setPage('results');setError(e.message)
+      setHistory(h=>[{id:Date.now(),createdAt:new Date().toISOString(),profile:{...profile},result:fallback},...h].slice(0,20))
+    } finally {setLoading(false)}
   }
-
-  const goNext = () => {
-    if (step === 3) {
-      runAssessment()
-    } else {
-      setStep((s) => s + 1)
-    }
+  function openHistory(item){setProfile(item.profile);setResult(item.result);setPage('results')}
+  function restart(){setProfile(blank);setResult(null);setStep(0);setPage('overview')}
+  async function runTool(tool){
+    setToolBusy(true);setToolOutput(null)
+    try{const r=await fetch(`/api/tools/${tool}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profile})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Tool call failed');setToolOutput({tool,result:d.result});}
+    catch(e){setToolOutput({tool,error:e.message})}finally{setToolBusy(false)}
   }
-  const goBack = () => {
-    if (step === 4) {
-      setAssessed(false)
-      setApiResult(null)
-      setApiError(null)
-    }
-    setStep((s) => Math.max(-1, s - 1))
+  function exportResult(){
+    const payload={application:'Harmonious Home',exportedAt:new Date().toISOString(),profile,result}
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='harmonious-home-assessment.json';a.click();URL.revokeObjectURL(url);notify('Assessment export prepared')
   }
+  const nav=[['overview','Overview','⌂'],['assessment','Home assessment','▦'],['layout','Explore layout','◇'],['history','History','◷']]
+  const labelTradition=TRADITIONS.find(t=>t.value===profile.tradition)?.label || 'Not selected'
+  const resultCount=result?.recommendations?.length ?? localFindings.length
 
-  const restart = () => {
-    setProfile(initialProfile)
-    setAssessed(false)
-    setApiResult(null)
-    setApiError(null)
-    setStep(-1)
-  }
+  return <div className="app">
+    <aside className="sidebar">
+      <div className="brand"><div className="brand-mark">H</div><div><b>harmonious<span>.</span></b><small>HOME INTELLIGENCE</small></div></div>
+      <div className="workspace-label">WORKSPACE</div>
+      <nav>{nav.map(([id,label,ico])=><button key={id} className={page===id?'nav-item active':'nav-item'} onClick={()=>id==='assessment'?start():setPage(id)}><span>{ico}</span>{label}{id==='history'&&history.length>0&&<em>{history.length}</em>}</button>)}</nav>
+      <div className="sidebar-bottom"><div className="status-card"><span className={`status-dot ${health?.status==='ok'?'':'offline'}`}></span><div><b>{health?.status==='ok'?'Systems operational':'Local mode available'}</b><small>{health?.groqConfigured?'AI synthesis enabled':'Deterministic engine ready'}</small></div></div><div className="side-note">Thoughtful spaces.<br/>Grounded recommendations.</div></div>
+    </aside>
+    <main className="main">
+      <header className="topbar"><div className="crumb">Harmonious Home <span>/</span> {nav.find(n=>n[0]===page)?.[1] || 'Assessment'}</div><div className="top-actions"><span className="privacy"><Icon>◈</Icon> Private by design</span><button className="avatar" title="Local profile">A</button></div></header>
+      <div className="content">
+        {page==='overview'&&<div className="animate-in">
+          <section className="hero"><div className="hero-copy"><div className="eyebrow"><span className="eyebrow-line"></span> A MORE CONSIDERED WAY TO LIVE</div><h1>Your home,<br/><i>in better balance.</i></h1><p>Understand the way your space works, uncover opportunities and create a home that feels more supportive — one thoughtful change at a time.</p><div className="hero-actions"><button className="btn btn-dark" onClick={start}>Start home assessment <span>↗</span></button><button className="text-btn" onClick={()=>setPage('layout')}>Explore the layout <span>→</span></button></div></div><div className="hero-art"><div className="sun"></div><div className="art-orbit orbit-one"></div><div className="art-orbit orbit-two"></div><div className="art-house"><div className="roof"></div><div className="house-body"><div className="window"></div><div className="door"></div><div className="plant">♧</div></div><div className="ground"></div></div><div className="art-caption">SPACE · LIGHT · FLOW</div></div></section>
+          <div className="section-heading"><div><div className="eyebrow muted">YOUR HOME AT A GLANCE</div><h2>A little more clarity.</h2></div><span className="updated">Saved automatically on this device</span></div>
+          <div className="stats-grid"><div className="stat-card"><div className="stat-icon sage">⌂</div><span>PROFILE COMPLETENESS</span><strong>{completeness}<small>%</small></strong><div className="mini-progress"><i style={{width:`${completeness}%`}}/></div><p>Based on the details you've shared</p></div><div className="stat-card"><div className="stat-icon peach">✳</div><span>RULES CURRENTLY MATCHED</span><strong>{localFindings.length.toString().padStart(2,'0')}</strong><p>Preliminary signals from your answers</p></div><div className="stat-card"><div className="stat-icon lavender">◷</div><span>ASSESSMENTS SAVED</span><strong>{history.length.toString().padStart(2,'0')}</strong><p>Stored locally in this browser</p></div></div>
+          <div className="feature-grid"><button className="feature-card" onClick={start}><div className="feature-top"><span className="feature-icon">▦</span><span>01 / ASSESS</span></div><h3>Know your space.</h3><p>A guided review of rooms, orientation, light, airflow and the things that matter to you.</p><b>Begin assessment <span>↗</span></b></button><button className="feature-card" onClick={()=>setPage('layout')}><div className="feature-top"><span className="feature-icon">◇</span><span>02 / EXPLORE</span></div><h3>See the bigger picture.</h3><p>Explore a simple room map and reflect on circulation, use and spatial relationships.</p><b>Explore rooms <span>↗</span></b></button><button className="feature-card" onClick={()=>setPage('history')}><div className="feature-top"><span className="feature-icon">↗</span><span>03 / REFLECT</span></div><h3>Track your progress.</h3><p>Keep a record of your assessments and revisit the recommendations that matter.</p><b>View history <span>↗</span></b></button></div>
+          <div className="principle-strip"><span>OUR GUIDING PRINCIPLE</span><p>Practical safety, accessibility and comfort always come before symbolic preferences.</p><span className="strip-mark">✳</span></div>
+        </div>}
 
-  // ——— Landing ———
-  if (step === -1) {
-    return (
-      <div className="app-shell">
-        <div className="landing">
-          <h1>Harmonious Home</h1>
-          <p className="lead">
-            A practical, explainable assessment for Indian households. Feng Shui first, optional
-            separate Vastu lens. Safe, reversible recommendations with visible uncertainty.
-          </p>
+        {page==='assessment'&&<div className="assessment-wrap animate-in"><div className="page-intro"><div className="eyebrow muted">YOUR HOME · A CLOSER LOOK</div><h1>Let's understand<br/><i>your space.</i></h1><p>A few considered questions help us make the guidance more relevant. Skip anything you don't know.</p></div><div className="assessment-layout"><div className="step-rail">{STEPS.slice(0,4).map((s,i)=><button key={s.id} className={`step-link ${step===i?'current':''} ${step>i?'completed':''}`} onClick={()=>setStep(i)}><span className="step-number">{step>i?'✓':`0${i+1}`}</span><span><b>{s.label}</b><small>{['The basics','Rooms and relationships','Light, air and climate','People and priorities'][i]}</small></span></button>)}<div className="rail-tip"><span>✧</span><b>There are no wrong answers.</b><p>Honest observations are more useful than perfect measurements.</p></div></div>
+          <section className="form-panel"><div className="form-head"><div><span className="form-kicker">STEP 0{step+1} / 04</span><h2>{['The foundations','Rooms & relationships','Light, air & surroundings','People & priorities'][step]}</h2><p>{['Start with a little context about the home.','Tell us how the rooms are arranged and used.','A comfortable home begins with its environment.','Your goals and constraints shape what is practical.'][step]}</p></div><div className="step-percent">{Math.round((step+1)/4*100)}<small>%</small></div></div><div className="form-progress"><i style={{width:`${(step+1)*25}%`}}/></div>
+          {step===0&&<div className="form-fields"><Field label="City or broad region" hint="A city or climate region is enough — never share your street address."><input value={profile.city} onChange={e=>update('city',e.target.value)} placeholder="e.g. Pune, Bengaluru, coastal Kerala"/></Field><div className="field-row"><Field label="Property type"><Select value={profile.propertyType} onChange={v=>update('propertyType',v)}><option value="">Choose one</option>{PROPERTY_TYPES.map(x=><option key={x}>{x}</option>)}</Select></Field><Field label="Current stage"><Select value={profile.stage} onChange={v=>update('stage',v)}>{['Occupied','Moving in','Renovation','New build','Rental'].map(x=><option key={x}>{x}</option>)}</Select></Field></div><Field label="Which lens would you like to explore?" hint="Each tradition is assessed separately."><Select value={profile.tradition} onChange={v=>update('tradition',v)}><option value="">Choose a lens</option>{TRADITIONS.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</Select></Field><Field label="Do you know true / geographic north?" hint="Compass-based interpretations need a reliable orientation reference."><Select value={profile.northKnown} onChange={v=>update('northKnown',v)}><option value="">Choose one</option>{['Verified (plan or careful compass)','Approximate / guess','Unknown'].map(x=><option key={x}>{x}</option>)}</Select></Field><Field label="Which direction does the home's own entrance face?"><Select value={profile.entranceDirection} onChange={v=>update('entranceDirection',v)}><option value="">Not sure / skip</option>{DIRECTIONS.map(x=><option key={x}>{x}</option>)}</Select></Field></div>}
+          {step===1&&<div className="form-fields"><Field label="Kitchen location (if known)"><Select value={profile.kitchenLocation} onChange={v=>update('kitchenLocation',v)}><option value="">Not sure / skip</option>{DIRECTIONS.map(x=><option key={x}>{x}</option>)}<option>Open-plan / not fixed</option></Select></Field><Field label="From the bed, can you see the bedroom door?"><Select value={profile.bedSeesDoor} onChange={v=>update('bedSeesDoor',v)}><option value="">Not sure / skip</option>{['Can see door, not in direct line','Direct alignment (door at foot of bed)','Cannot see door from bed','Not applicable / no fixed bed'].map(x=><option key={x}>{x}</option>)}</Select></Field><Field label="What is near the centre of the home?"><Select value={profile.centreUse} onChange={v=>update('centreUse',v)}><option value="">Not sure / skip</option>{['Open living / circulation','Stairs or lift','Wet area / bathroom','Heavy storage / clutter','Unknown'].map(x=><option key={x}>{x}</option>)}</Select></Field><div className="layout-hint"><span>⌘</span><div><b>Think about how you move through the home.</b><p>Consider whether the main paths feel open, intuitive and easy to navigate.</p></div></div></div>}
+          {step===2&&<div className="form-fields"><Field label="Overall daylight quality"><Select value={profile.daylight} onChange={v=>update('daylight',v)}><option value="">Choose one</option>{['Good / balanced','Harsh / glare','Limited / dark','Seasonal variation'].map(x=><option key={x}>{x}</option>)}</Select></Field><Field label="How would you describe ventilation?"><Select value={profile.ventilation} onChange={v=>update('ventilation',v)}><option value="">Choose one</option>{['Cross-flow possible','Single-sided only','Mostly mechanical','Poor / stale air'].map(x=><option key={x}>{x}</option>)}</Select></Field><Field label="Climate or environmental concerns"><ChipGroup options={['Hot-dry / western sun','Humid / coastal','Monsoon dampness / mould','Water ingress','Dust / pollution','Neighbourhood noise','None of these']} value={safeArray(profile.climateConcerns)} onChange={v=>update('climateConcerns',v)}/></Field><Field label="Where do clutter or storage hotspots tend to appear?"><ChipGroup options={['Entrance','Centre','Bedroom','Kitchen','Balcony','Under stairs','None']} value={safeArray(profile.clutter)} onChange={v=>update('clutter',v)}/></Field></div>}
+          {step===3&&<div className="form-fields"><Field label="What would you most like to improve?"><ChipGroup options={GOALS} value={safeArray(profile.goals)} onChange={v=>update('goals',v)}/></Field><Field label="Any constraints we should respect?"><ChipGroup options={['Rental / landlord approval needed','Housing-society rules','Limited budget','No drilling / no structural change','Mobility or accessibility needs','Children in household','Older adults in household']} value={safeArray(profile.constraints)} onChange={v=>update('constraints',v)}/></Field><Field label="Anything else? (optional)" hint="Avoid names, exact addresses or sensitive personal details."><textarea rows="4" value={profile.freeText} onChange={e=>update('freeText',e.target.value)} placeholder="e.g. narrow corridor, shared wall with neighbour's kitchen…"/></Field><div className="privacy-note">◈ Your answers are saved in this browser. The AI service receives your assessment profile only when you submit.</div></div>}
+          <div className="form-footer"><button className="btn btn-light" onClick={goBack}>{step===0?'← Overview':'← Previous'}</button><span>{step+1} of 4</span><button className="btn btn-dark" disabled={loading} onClick={goNext}>{step===3?(loading?'Reviewing your home…':'Generate assessment ↗'):'Continue →'}</button></div></section></div></div>}
 
-          <div className="principles">
-            <h3>Design principles</h3>
-            <ul>
-              <li>
-                <strong>Traditions stay distinct</strong> — Feng Shui and Vastu are never blended
-                into one score.
-              </li>
-              <li>
-                <strong>No invented certainty</strong> — unknown directions are gaps, not defects.
-              </li>
-              <li>
-                <strong>Practical first</strong> — safety, ventilation and accessibility outrank
-                symbolic preference.
-              </li>
-              <li>
-                <strong>Respect existing homes</strong> — start with reversible, low-cost options.
-              </li>
-              <li>
-                <strong>No life-outcome claims</strong> — no promises of wealth, health or fortune.
-              </li>
-            </ul>
-          </div>
+        {page==='layout'&&<div className="animate-in"><div className="page-intro"><div className="eyebrow muted">SPATIAL EXPLORER</div><h1>Explore your <i>home's flow.</i></h1><p>A conceptual room map to help you think about adjacency, movement and how each space feels. It is not a measured floor plan.</p></div><div className="layout-explorer"><div className="floor-card"><div className="floor-head"><div><span className="form-kicker">CONCEPTUAL PLAN</span><h2>A home in perspective</h2></div><span className="plan-tag">ILLUSTRATIVE</span></div><div className="floorplan"><button className={`room room-living ${room==='Living room'?'chosen':''}`} onClick={()=>setRoom('Living room')}><span>01</span><b>Living room</b><small>Gather · Connect</small></button><button className={`room room-kitchen ${room==='Kitchen'?'chosen':''}`} onClick={()=>setRoom('Kitchen')}><span>02</span><b>Kitchen</b><small>Prepare · Nourish</small></button><button className={`room room-bedroom ${room==='Bedroom'?'chosen':''}`} onClick={()=>setRoom('Bedroom')}><span>03</span><b>Bedroom</b><small>Rest · Restore</small></button><button className={`room room-bath ${room==='Bathroom'?'chosen':''}`} onClick={()=>setRoom('Bathroom')}><span>04</span><b>Bathroom</b><small>Refresh</small></button><div className="hallway">CIRCULATION</div><div className="plan-compass">N <span>↑</span></div></div><div className="plan-legend"><span><i className="legend-dot sage-dot"/> Living & social</span><span><i className="legend-dot peach-dot"/> Utility</span><span><i className="legend-dot blue-dot"/> Private</span></div></div><div className="room-detail"><span className="form-kicker">SELECTED SPACE</span><div className="room-symbol">{room==='Living room'?'⌂':room==='Kitchen'?'◒':room==='Bedroom'?'☾':'◌'}</div><h2>{room}</h2><p>{({'Living room':'A shared space for gathering, conversation and everyday circulation. Notice whether pathways feel natural and seating supports connection.','Kitchen':'A working space where safe movement, ventilation, task lighting and clear work surfaces matter.','Bedroom':'A restorative space. Consider privacy, glare, noise, access to the door and a comfortable route around the bed.','Bathroom':'A utility space where moisture control, slip resistance, ventilation and safe access are essential.'})[room]}</p><div className="detail-prompt"><b>Consider</b><span>{room==='Kitchen'?'Is there clear space to prepare food and move safely?':room==='Bedroom'?'Can you move around the bed without obstruction?':room==='Bathroom'?'Is the floor safe and is moisture effectively managed?':'Can people move through this space without navigating obstacles?'}</span></div><button className="btn btn-dark full" onClick={start}>Assess my home ↗</button></div></div></div>}
 
-          <button className="btn btn-primary" onClick={() => setStep(0)}>
-            Start assessment
-          </button>
-        </div>
-        <footer className="app-footer">
-          Prototype demo · Groq agents when API key is set · Based on the Harmonious Home system
-          design
-        </footer>
+        {page==='results'&&result&&<div className="animate-in"><div className="results-top"><div><div className="eyebrow muted">YOUR HOME · ASSESSMENT REPORT</div><h1>{result.headline||'A more considered home.'}</h1><p>{result.overallNote||'A first-pass assessment based on your responses and the included illustrative rules.'}</p></div><button className="btn btn-light export-btn" onClick={exportResult}>↓ Export report</button></div><div className="report-summary"><div><span>PROFILE COMPLETENESS</span><strong>{result.completeness??completeness}%</strong><div className="mini-progress"><i style={{width:`${result.completeness??completeness}%`}}/></div></div><div><span>FINDINGS</span><strong>{result.findings?.length??0}</strong><small>Deterministic rule matches</small></div><div><span>ASSESSMENT MODE</span><strong className="mode-text">{result.mode||'Rules only'}</strong><small>{health?.groqConfigured?'AI synthesis configured':'Local fallback available'}</small></div></div><div className="agent-console"><div className="agent-console-head"><div><span className="form-kicker">AGENT WORKFLOW · TOOL TRACE</span><b>Assessment operations</b></div><span className="tool-live">● {result.agentMeta?.agentRuns?.filter(a=>a.status==='completed').length||0} agents completed</span></div><div className="agent-steps">{(result.agentMeta?.agentRuns||[{agent:'deterministic_rule_engine',status:'completed'},{agent:'context_and_safety_checks',status:'completed'}]).map((a,i)=><div className="agent-step" key={a.agent}><span>{a.status==='completed'?'✓':'○'}</span><b>{a.agent.replaceAll('_',' ')}</b><small>{a.status}</small></div>)}</div><div className="tool-actions"><button disabled={toolBusy} onClick={()=>runTool('calculate_completeness')}>↗ Check completeness</button><button disabled={toolBusy} onClick={()=>runTool('get_safety_constraints')}>↗ Run safety tool</button><button disabled={toolBusy} onClick={()=>runTool('get_missing_questions')}>↗ Find missing context</button></div>{toolOutput&&<div className="tool-output"><div><b>{toolOutput.tool.replaceAll('_',' ')}</b><button onClick={()=>setToolOutput(null)}>×</button></div><pre>{toolOutput.error||JSON.stringify(toolOutput.result,null,2)}</pre></div>}</div>{error&&<div className="inline-alert">AI service note: {error}. Showing deterministic results instead.</div>}<div className="results-section-head"><div><div className="eyebrow muted">PERSONALISED OBSERVATIONS</div><h2>What we noticed.</h2></div><div className="filter-tabs">{['all','high','medium','low','info'].map(f=><button className={filter===f?'selected':''} key={f} onClick={()=>setFilter(f)}>{f==='all'?'All':f[0].toUpperCase()+f.slice(1)}</button>)}</div></div><div className="recommendations">{visibleRecommendations.length?visibleRecommendations.map((f,i)=><article className="recommendation" key={f.id||i}><button className="rec-main" onClick={()=>setExpanded(e=>({...e,[f.id||i]:!e[f.id||i]}))}><span className="rec-index">0{i+1}</span><span className="rec-title"><b>{f.title||f.observation}</b><small>{(f.basis||[]).join(' · ')}</small></span><span className={`priority ${f.priority||'medium'}`}>{f.priority||'medium'}</span><span className="rec-chevron">{expanded[f.id||i]?'−':'+'}</span></button><div className="rec-action"><span>RECOMMENDED NEXT STEP</span><p>{f.action}</p></div>{expanded[f.id||i]&&<div className="rec-expanded">{f.observation&&<div><b>Observation</b><p>{f.observation}</p></div>}{f.traditionalInterpretation&&<div><b>Traditional interpretation</b><p>{f.traditionalInterpretation}</p></div>}{f.practicalRationale&&<div><b>Practical rationale</b><p>{f.practicalRationale}</p></div>}{f.explanation&&<div><b>Explanation</b><p>{f.explanation}</p></div>}{f.alternative&&<div><b>Alternative</b><p>{f.alternative}</p></div>}{f.caveats?.length>0&&<div><b>Important caveats</b><p>{f.caveats.join(' ')}</p></div>}<div className="rec-meta"><span>Confidence: <b>{f.confidence||'Not specified'}</b></span><span>Cost: <b>{f.costBand||'Not specified'}</b></span></div></div>}</article>):<div className="empty-state">No findings in this priority filter. Try another filter or review your answers.</div>}</div><div className="safety-panel"><div className="safety-icon">!</div><div><b>Safety is non-negotiable.</b><p>These hard constraints take precedence over every traditional or stylistic recommendation.</p><ul>{(result.doNot||getDoNotList()).map(x=><li key={x}>{x}</li>)}</ul></div></div>{result.missing?.length>0&&<div className="missing-panel"><b>Information that could improve confidence</b><p>{result.missing.join(' · ')}</p></div>}<div className="limitations"><b>About this assessment</b><p>{(result.limitations||[]).join(' ')||'Traditional interpretations are illustrative, not scientific predictions or expert-certified building advice.'} Feng Shui and Vastu are distinct interpretive lenses. For building defects or safety concerns, consult qualified professionals.</p></div><div className="results-actions"><button className="btn btn-light" onClick={()=>{setStep(0);setPage('assessment')}}>Edit answers</button><button className="btn btn-dark" onClick={restart}>Start a new assessment ↗</button></div></div>}
+
+        {page==='history'&&<div className="animate-in"><div className="page-intro"><div className="eyebrow muted">YOUR JOURNEY</div><h1>Room to <i>reflect.</i></h1><p>Your recent assessments are stored locally on this device, so you can return to them whenever you need.</p></div>{history.length===0?<div className="empty-history"><div>◷</div><h2>Your story starts here.</h2><p>Complete your first home assessment to create a record of your observations and recommendations.</p><button className="btn btn-dark" onClick={start}>Start assessment ↗</button></div>:<div className="history-list">{history.map((item,i)=><button className="history-item" key={item.id} onClick={()=>openHistory(item)}><div className="history-date"><b>{new Date(item.createdAt).toLocaleDateString(undefined,{day:'2-digit'})}</b><span>{new Date(item.createdAt).toLocaleDateString(undefined,{month:'short',year:'numeric'})}</span></div><div className="history-info"><b>{item.profile.city||'Home assessment'}</b><span>{TRADITIONS.find(t=>t.value===item.profile.tradition)?.label||'Home review'} · {item.result?.findings?.length||0} observations</span></div><span className="history-score">{item.result?.completeness??0}% complete</span><span>↗</span></button>)}</div>}</div>}
       </div>
-    )
-  }
-
-  // ——— Results ———
-  if (step === 4) {
-    return (
-      <div className="app-shell">
-        <header className="app-header">
-          <p className="logo">Harmonious Home</p>
-          <p className="tagline">Assessment results</p>
-        </header>
-
-        <div className="progress-bar">
-          {STEPS.map((s, i) => (
-            <div key={s.id} className={`progress-step ${i <= 4 ? 'done' : ''}`} />
-          ))}
-        </div>
-
-        {loading ? (
-          <div className="card" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
-            <p style={{ margin: 0, fontSize: '1.05rem' }}>Running assessment…</p>
-            <p style={{ margin: '0.5rem 0 0', color: 'var(--ink-muted)', fontSize: '0.9rem' }}>
-              Deterministic rules + optional Groq synthesis
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="results-header">
-              <h2>{headline}</h2>
-              {overallNote && (
-                <p style={{ margin: '0.5rem 0 0', color: 'var(--ink-muted)', fontSize: '0.9rem' }}>
-                  {overallNote}
-                </p>
-              )}
-              <p style={{ margin: '0.35rem 0 0', fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
-                Mode: {mode}
-                {apiResult?.agentMeta?.model ? ` · model ${apiResult.agentMeta.model}` : ''}
-              </p>
-              <div className="completeness">
-                <span>Completeness</span>
-                <div className="completeness-bar">
-                  <div className="completeness-fill" style={{ width: `${completeness}%` }} />
-                </div>
-                <span>{completeness}%</span>
-              </div>
-            </div>
-
-            {apiError && (
-              <div
-                className="do-not"
-                style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}
-              >
-                <h3 style={{ color: 'var(--ink-muted)' }}>API note</h3>
-                <p style={{ margin: 0, fontSize: '0.875rem' }}>{apiError}</p>
-              </div>
-            )}
-
-            {missing.length > 0 && (
-              <div className="missing-list">
-                <h3>Information that would improve confidence</h3>
-                <ul>
-                  {missing.map((m) => (
-                    <li key={m}>{m}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {findings.length === 0 ? (
-              <div className="card">
-                <p style={{ margin: 0 }}>
-                  No strong rule triggers from the current answers. This can mean the home already
-                  looks practical on the points we checked, or that more detail is needed. Try
-                  adding orientation, ventilation or clutter information.
-                </p>
-              </div>
-            ) : (
-              findings.map((f, idx) => (
-                <div key={f.id || idx} className="rec-card">
-                  <div className="rec-top">
-                    <h3>{f.title || f.observation}</h3>
-                    <span className={`priority-badge ${f.priority || 'medium'}`}>
-                      {f.priority || 'medium'}
-                    </span>
-                  </div>
-                  <div className="basis-tags">
-                    {(f.basis || []).map((b) => (
-                      <span key={b} className="basis-tag">
-                        {b}
-                      </span>
-                    ))}
-                  </div>
-
-                  {f.explanation && (
-                    <div className="rec-section">
-                      <div className="label">Explanation</div>
-                      <p>{f.explanation}</p>
-                    </div>
-                  )}
-                  {f.traditionalInterpretation && !f.explanation && (
-                    <div className="rec-section">
-                      <div className="label">Traditional interpretation</div>
-                      <p>{f.traditionalInterpretation}</p>
-                    </div>
-                  )}
-                  {f.practicalRationale && (
-                    <div className="rec-section">
-                      <div className="label">Practical rationale</div>
-                      <p>{f.practicalRationale}</p>
-                    </div>
-                  )}
-                  {(f.observation && f.title) && (
-                    <div className="rec-section">
-                      <div className="label">Observation</div>
-                      <p>{f.observation}</p>
-                    </div>
-                  )}
-                  <div className="rec-section">
-                    <div className="label">Suggested action</div>
-                    <p>{f.action}</p>
-                  </div>
-                  {f.alternative && (
-                    <div className="rec-section">
-                      <div className="label">Alternative</div>
-                      <p>{f.alternative}</p>
-                    </div>
-                  )}
-                  {(f.caveats?.length > 0 || f.caveats) && (
-                    <div className="rec-section">
-                      <div className="label">Caveats</div>
-                      <p>
-                        {Array.isArray(f.caveats) ? f.caveats.join(' ') : f.caveats}
-                      </p>
-                    </div>
-                  )}
-                  <div className="meta-row">
-                    <span className="meta-item">
-                      Confidence: <strong>{f.confidence || '—'}</strong>
-                    </span>
-                    <span className="meta-item">
-                      Cost: <strong>{f.costBand || '—'}</strong>
-                    </span>
-                    {f.reversibility && (
-                      <span className="meta-item">
-                        Reversibility: <strong>{f.reversibility}</strong>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-
-            <div className="do-not">
-              <h3>Do-not list (hard constraints)</h3>
-              <ul>
-                {doNot.map((d) => (
-                  <li key={d}>{d}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="limitations">
-              <h3>Limitations of this demo</h3>
-              <ul>
-                {(apiResult?.limitations || [
-                  'Illustrative rules and agent prompts only — not expert-certified.',
-                  'No full classical Flying Stars / Luopan calculation.',
-                  'Safety, ventilation and accessibility always outrank symbolic preference.',
-                  'Verify any significant change with qualified professionals.',
-                ]).map((l) => (
-                  <li key={l}>{l}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="btn-row">
-              <button className="btn btn-secondary" onClick={goBack}>
-                Edit answers
-              </button>
-              <button className="btn btn-primary" onClick={restart}>
-                Start over
-              </button>
-            </div>
-          </>
-        )}
-
-        <footer className="app-footer">
-          Prototype · Traditions kept distinct · Safety & accessibility outrank symbolism
-        </footer>
-      </div>
-    )
-  }
-
-  // ——— Form steps ———
-  return (
-    <div className="app-shell">
-      <header className="app-header">
-        <p className="logo">Harmonious Home</p>
-        <p className="tagline">
-          Step {step + 1} of 4 — {STEPS[step].label}
-        </p>
-      </header>
-
-      <div className="progress-bar">
-        {STEPS.slice(0, 4).map((s, i) => (
-          <div
-            key={s.id}
-            className={`progress-step ${i < step ? 'done' : ''} ${i === step ? 'active' : ''}`}
-          />
-        ))}
-      </div>
-
-      {/* Step 0 — Basics */}
-      {step === 0 && (
-        <div className="card">
-          <h2>About your home</h2>
-          <p className="subtitle">Minimum context so recommendations stay relevant.</p>
-
-          <Field label="City or broad region" hint="Never ask for exact street address.">
-            <input
-              type="text"
-              placeholder="e.g. Pune, Bengaluru, coastal Kerala…"
-              value={profile.city}
-              onChange={(e) => update('city', e.target.value)}
-            />
-          </Field>
-
-          <Field label="Property type">
-            <select
-              value={profile.propertyType}
-              onChange={(e) => update('propertyType', e.target.value)}
-            >
-              <option value="">Select…</option>
-              {PROPERTY_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Current stage">
-            <select value={profile.stage} onChange={(e) => update('stage', e.target.value)}>
-              <option>Occupied</option>
-              <option>Moving in</option>
-              <option>Renovation</option>
-              <option>New build</option>
-              <option>Rental</option>
-            </select>
-          </Field>
-
-          <Field
-            label="Which lens would you like?"
-            hint="You can choose Feng Shui, Vastu, both separately, or practical advice only."
-          >
-            <select
-              value={profile.tradition}
-              onChange={(e) => update('tradition', e.target.value)}
-            >
-              <option value="">Select…</option>
-              {TRADITIONS.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field
-            label="Do you know true / geographic north?"
-            hint="Controls whether directional (compass) rules are allowed."
-          >
-            <select
-              value={profile.northKnown}
-              onChange={(e) => update('northKnown', e.target.value)}
-            >
-              <option value="">Select…</option>
-              <option>Verified (plan or careful compass)</option>
-              <option>Approximate / guess</option>
-              <option>Unknown</option>
-            </select>
-          </Field>
-
-          <Field label="Which direction does the home’s own entrance face?">
-            <select
-              value={profile.entranceDirection}
-              onChange={(e) => update('entranceDirection', e.target.value)}
-            >
-              <option value="">Select…</option>
-              {DIRECTIONS.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-      )}
-
-      {/* Step 1 — Rooms */}
-      {step === 1 && (
-        <div className="card">
-          <h2>Rooms & layout</h2>
-          <p className="subtitle">Functional relationships matter more than perfect labels.</p>
-
-          <Field label="Kitchen location (if known)">
-            <select
-              value={profile.kitchenLocation}
-              onChange={(e) => update('kitchenLocation', e.target.value)}
-            >
-              <option value="">Select or skip…</option>
-              {DIRECTIONS.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-              <option>Open-plan / not fixed</option>
-            </select>
-          </Field>
-
-          <Field
-            label="Primary bedroom — bed and door relationship"
-            hint="Command-position style question; only if a bedroom exists."
-          >
-            <select
-              value={profile.bedSeesDoor}
-              onChange={(e) => update('bedSeesDoor', e.target.value)}
-            >
-              <option value="">Select or skip…</option>
-              <option>Can see door, not in direct line</option>
-              <option>Direct alignment (door at foot of bed)</option>
-              <option>Cannot see door from bed</option>
-              <option>Not applicable / no fixed bed</option>
-            </select>
-          </Field>
-
-          <Field label="What is near the centre of the home?">
-            <select value={profile.centreUse} onChange={(e) => update('centreUse', e.target.value)}>
-              <option value="">Select or skip…</option>
-              <option>Open living / circulation</option>
-              <option>Stairs or lift</option>
-              <option>Wet area / bathroom</option>
-              <option>Heavy storage / clutter</option>
-              <option>Unknown</option>
-            </select>
-          </Field>
-        </div>
-      )}
-
-      {/* Step 2 — Environment */}
-      {step === 2 && (
-        <div className="card">
-          <h2>Light, air & surroundings</h2>
-          <p className="subtitle">Practical building concerns are kept separate from tradition rules.</p>
-
-          <Field label="Overall daylight quality">
-            <select value={profile.daylight} onChange={(e) => update('daylight', e.target.value)}>
-              <option value="">Select…</option>
-              <option>Good / balanced</option>
-              <option>Harsh / glare</option>
-              <option>Limited / dark</option>
-              <option>Seasonal variation</option>
-            </select>
-          </Field>
-
-          <Field label="Ventilation">
-            <select
-              value={profile.ventilation}
-              onChange={(e) => update('ventilation', e.target.value)}
-            >
-              <option value="">Select…</option>
-              <option>Cross-flow possible</option>
-              <option>Single-sided only</option>
-              <option>Mostly mechanical</option>
-              <option>Poor / stale air</option>
-            </select>
-          </Field>
-
-          <Field label="Climate or environmental concerns (multi-select)">
-            <ChipGroup
-              options={[
-                'Hot-dry / western sun',
-                'Humid / coastal',
-                'Monsoon dampness / mould',
-                'Water ingress',
-                'Dust / pollution',
-                'Neighbourhood noise',
-                'None of these',
-              ]}
-              value={profile.climateConcerns}
-              onChange={(v) => update('climateConcerns', v)}
-            />
-          </Field>
-
-          <Field label="Clutter or storage hotspots">
-            <ChipGroup
-              options={['Entrance', 'Centre', 'Bedroom', 'Kitchen', 'Balcony', 'Under stairs', 'None']}
-              value={profile.clutter}
-              onChange={(v) => update('clutter', v)}
-            />
-          </Field>
-        </div>
-      )}
-
-      {/* Step 3 — People & priorities */}
-      {step === 3 && (
-        <div className="card">
-          <h2>People & priorities</h2>
-          <p className="subtitle">Your goals and constraints shape which recommendations appear first.</p>
-
-          <Field label="What would you like to improve?">
-            <ChipGroup
-              options={GOALS}
-              value={profile.goals}
-              onChange={(v) => update('goals', v)}
-            />
-          </Field>
-
-          <Field label="Constraints (if any)">
-            <ChipGroup
-              options={[
-                'Rental / landlord approval needed',
-                'Housing-society rules',
-                'Limited budget',
-                'No drilling / no structural change',
-                'Mobility or accessibility needs',
-                'Children in household',
-                'Older adults in household',
-              ]}
-              value={profile.constraints}
-              onChange={(v) => update('constraints', v)}
-            />
-          </Field>
-
-          <Field
-            label="Anything else we should know? (optional)"
-            hint="Avoid names, exact address or sensitive personal details."
-          >
-            <textarea
-              placeholder="e.g. narrow corridor, shared wall with neighbour kitchen…"
-              value={profile.freeText}
-              onChange={(e) => update('freeText', e.target.value)}
-            />
-          </Field>
-        </div>
-      )}
-
-      <div className="btn-row">
-        <button className="btn btn-secondary" onClick={goBack} disabled={loading}>
-          {step === 0 ? 'Back to start' : 'Back'}
-        </button>
-        <button className="btn btn-primary" onClick={goNext} disabled={loading}>
-          {step === 3 ? (loading ? 'Assessing…' : 'See assessment') : 'Continue'}
-        </button>
-      </div>
-
-      <footer className="app-footer">
-        Answers stay in this browser session · API key never reaches the browser
-      </footer>
-    </div>
-  )
+      <footer className="app-footer"><span>HARMONIOUS HOME</span><span>Traditions kept distinct · Safety before symbolism</span><span>VERSION 2.0</span></footer>
+    </main>
+    {toast&&<div className="toast">✓ {toast}</div>}
+  </div>
 }

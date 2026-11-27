@@ -1,118 +1,82 @@
-/**
- * Simplified multi-agent orchestration using Groq Chat Completions.
- * Agents: Orchestrator context → Tradition Interpreter → Feasibility → Synthesizer
- * Deterministic findings are the source of truth; LLM only explains & ranks.
- */
 import Groq from 'groq-sdk'
 
-const SYSTEM_GUARDRAILS = `You are part of Harmonious Home, an assessment system for Indian households.
-Hard rules you must obey:
-- Never invent tradition rules, citations, directions, measurements or user answers.
-- Use ONLY the supplied deterministic findings and the user profile.
-- Keep Feng Shui and Vastu distinct; never blend them into one score or claim.
-- Prefer safe, reversible, low-cost actions. Never recommend structural work, gas, electrical or plumbing changes as a first response.
-- Safety, accessibility, ventilation and fire egress always outrank symbolic preference.
-- Do not promise wealth, health, fertility, marriage or protection from misfortune.
-- Treat unknown values as unknown.
-- Return valid JSON only when asked for JSON. No markdown fences.`
+const GUARDRAILS = `You are an assistant inside Harmonious Home. Treat supplied deterministic findings as the only source of recommendations. Never create rules, citations, measurements, directions, or user facts. Keep Feng Shui, Vastu, and practical building guidance distinct. Unknown means unknown. Safety, accessibility, ventilation and fire egress outrank symbolic preferences. Never promise wealth, health, fertility, relationships or protection from misfortune. Never recommend structural, gas, electrical or plumbing changes as first-line actions. Return JSON only.`
 
-/**
- * Run a short agent chain and return structured recommendations + headline.
- */
-export async function runAssessmentAgents({ profile, findings, missing, model, apiKey }) {
-  const groq = new Groq({ apiKey })
+const PROFILE_KEYS = ['city','propertyType','stage','tradition','northKnown','entranceDirection','kitchenLocation','bedSeesDoor','centreUse','ventilation','daylight','climateConcerns','clutter','goals','constraints','freeText']
 
-  const profileSummary = summariseProfile(profile)
-  const findingsText = findings
-    .map(
-      (f, i) =>
-        `[${i + 1}] id=${f.id} priority=${f.priority} basis=${f.basis?.join('; ')}
-observation: ${f.observation}
-action: ${f.action}
-alternative: ${f.alternative || 'n/a'}
-confidence: ${f.confidence}`
-    )
-    .join('\n\n')
-
-  // --- Agent 2+4 style: single synthesis call (keeps latency low for demo) ---
-  const userPrompt = `User profile summary:
-${profileSummary}
-
-Deterministic findings (source of truth — do not invent new rules):
-${findingsText || '(none triggered)'}
-
-Missing information that would improve confidence:
-${missing.length ? missing.map((m) => '- ' + m).join('\n') : '- none listed'}
-
-Task:
-1. Write a short neutral headline (max 12 words).
-2. Write a one-paragraph overallNote that explains the assessment style and limitations.
-3. Produce an array "recommendations" that re-expresses the findings in clear language.
-   For each item keep: id, title, priority, observation, basis (array), explanation, action, alternative, confidence, costBand, caveats (array).
-   You may lightly rephrase titles and explanations for clarity, but do NOT invent new findings or change priority / basis.
-4. If findings is empty, still return a helpful overallNote and an empty recommendations array.
-
-Return ONLY a JSON object with keys: headline, overallNote, recommendations.`
-
-  const completion = await groq.chat.completions.create({
-    model,
-    messages: [
-      { role: 'system', content: SYSTEM_GUARDRAILS },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0.3,
-    max_tokens: 2048,
-    response_format: { type: 'json_object' },
+function compactProfile(p) {
+  return Object.fromEntries(PROFILE_KEYS.filter(k => p[k] !== undefined).map(k => [k, p[k]]))
+}
+function safeRecommendations(parsed, findings) {
+  const allowed = new Map(findings.map(f => [f.id, f]))
+  if (!Array.isArray(parsed?.recommendations)) return findings
+  return parsed.recommendations.flatMap(candidate => {
+    const original = allowed.get(candidate?.id)
+    if (!original) return []
+    // AI may clarify language, but immutable fields remain deterministic.
+    return [{
+      ...original,
+      title: typeof candidate.title === 'string' ? candidate.title.slice(0,180) : original.title,
+      explanation: typeof candidate.explanation === 'string' ? candidate.explanation.slice(0,1200) : undefined,
+      action: original.action,
+    }]
+  }).concat(findings.filter(f => !parsed.recommendations.some(x => x?.id === f.id)))
+}
+async function completion(groq, model, messages, max_tokens=1200) {
+  const res = await groq.chat.completions.create({
+    model, messages, temperature:0.2, max_tokens,
+    response_format:{type:'json_object'},
   })
-
-  const raw = completion.choices?.[0]?.message?.content || '{}'
-  let parsed
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    // Fallback: return deterministic findings unchanged
-    return {
-      headline: 'Assessment based on deterministic rules',
-      overallNote:
-        'The language model returned unparseable output. Showing the rule-engine findings only.',
-      recommendations: findings,
-      meta: {
-        model,
-        tokens: completion.usage || null,
-        parseError: true,
-      },
-    }
-  }
-
-  // Ensure recommendations still carry original ids where possible
-  const recs = Array.isArray(parsed.recommendations) ? parsed.recommendations : findings
-
-  return {
-    headline: parsed.headline || 'First-pass assessment',
-    overallNote: parsed.overallNote || null,
-    recommendations: recs,
-    meta: {
-      model,
-      usage: completion.usage || null,
-      agent: 'synthesizer',
-    },
-  }
+  return JSON.parse(res.choices?.[0]?.message?.content || '{}')
 }
 
-function summariseProfile(p) {
-  const parts = []
-  if (p.city) parts.push(`City/region: ${p.city}`)
-  if (p.propertyType) parts.push(`Property: ${p.propertyType}`)
-  if (p.stage) parts.push(`Stage: ${p.stage}`)
-  if (p.tradition) parts.push(`Tradition lens: ${p.tradition}`)
-  if (p.northKnown) parts.push(`North known: ${p.northKnown}`)
-  if (p.entranceDirection) parts.push(`Entrance faces: ${p.entranceDirection}`)
-  if (p.ventilation) parts.push(`Ventilation: ${p.ventilation}`)
-  if (p.daylight) parts.push(`Daylight: ${p.daylight}`)
-  if (p.clutter?.length) parts.push(`Clutter hotspots: ${p.clutter.join(', ')}`)
-  if (p.climateConcerns?.length) parts.push(`Climate concerns: ${p.climateConcerns.join(', ')}`)
-  if (p.goals?.length) parts.push(`Goals: ${p.goals.join(', ')}`)
-  if (p.constraints?.length) parts.push(`Constraints: ${p.constraints.join(', ')}`)
-  if (p.freeText) parts.push(`Extra notes: ${p.freeText.slice(0, 200)}`)
-  return parts.join('\n') || 'Minimal profile'
+/**
+ * Three bounded roles. Deterministic findings remain authoritative and are
+ * reattached after every LLM step to prevent the model changing the rules.
+ */
+export async function runAssessmentAgents({profile,findings,missing,model,apiKey}) {
+  const groq = new Groq({apiKey, timeout:25000, maxRetries:1})
+  const source = JSON.stringify({profile:compactProfile(profile),findings,missing})
+  const started = Date.now()
+  let context = {observations:[], constraints:[], focus:'Explain only the supplied observations.'}
+  const agentRuns = []
+
+  try {
+    const interpreted = await completion(groq,model,[
+      {role:'system',content:GUARDRAILS+' You are the Tradition Interpreter. Organise the supplied findings by their stated tradition. Do not add findings. Return JSON with keys observations (array of {id, plainLanguage}), confidenceNote.'},
+      {role:'user',content:source},
+    ],900)
+    context = {...context, observations:Array.isArray(interpreted.observations)?interpreted.observations:[], confidenceNote:interpreted.confidenceNote}
+    agentRuns.push({agent:'tradition_interpreter',status:'completed'})
+  } catch { agentRuns.push({agent:'tradition_interpreter',status:'fallback'}) }
+
+  try {
+    const feasible = await completion(groq,model,[
+      {role:'system',content:GUARDRAILS+' You are the Feasibility & Safety Agent. Review only the supplied findings and profile constraints. You may flag conflicts, but may not invent recommendations or change actions. Return JSON with keys safetyFlags (array of strings), prioritisationNote.'},
+      {role:'user',content:source+'\nInterpreter context: '+JSON.stringify(context)},
+    ],700)
+    context = {...context, safetyFlags:Array.isArray(feasible.safetyFlags)?feasible.safetyFlags:[], prioritisationNote:feasible.prioritisationNote}
+    agentRuns.push({agent:'feasibility_safety',status:'completed'})
+  } catch { agentRuns.push({agent:'feasibility_safety',status:'fallback'}) }
+
+  try {
+    const synthesized = await completion(groq,model,[
+      {role:'system',content:GUARDRAILS+' You are the Report Synthesizer. Return JSON keys headline, overallNote, recommendations. Rephrase supplied finding titles and explain them plainly. Do not change ids, priority, basis, action, caveats or confidence. Do not drop findings.'},
+      {role:'user',content:source+'\nAgent context: '+JSON.stringify(context)},
+    ],1600)
+    agentRuns.push({agent:'report_synthesizer',status:'completed'})
+    return {
+      headline: typeof synthesized.headline==='string'?synthesized.headline.slice(0,120):'Your home assessment',
+      overallNote: typeof synthesized.overallNote==='string'?synthesized.overallNote.slice(0,1400):'A first-pass review based on the answers and deterministic rule matches.',
+      recommendations:safeRecommendations(synthesized,findings),
+      meta:{model,agentRuns,elapsedMs:Date.now()-started,toolCalls:['evaluate_home_rules','get_missing_questions','get_safety_constraints']},
+    }
+  } catch (error) {
+    return {
+      headline:'Assessment based on deterministic rules',
+      overallNote:'The report agent could not complete synthesis. The deterministic findings are shown without AI modification.',
+      recommendations:findings,
+      meta:{model,agentRuns,elapsedMs:Date.now()-started,fallback:true,error:error.message},
+    }
+  }
 }
