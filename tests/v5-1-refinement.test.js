@@ -13,5 +13,5 @@ test('service worker excludes API calls from cache and supports update notificat
  const app=read('../src/App.jsx');assert.match(app,/serviceWorker\.register\('\/sw\.js'/);assert.match(app,/A new version is ready/)
 })
 test('release metadata is synchronized',()=>{
- const pkg=JSON.parse(read('../package.json'));const app=read('../src/App.jsx');assert.equal(pkg.version,'5.2.0');assert.match(app,/VERSION 5\.2\.0/)
+ const pkg=JSON.parse(read('../package.json'));const app=read('../src/App.jsx');assert.equal(pkg.version,'5.3.0');assert.match(app,/VERSION 5\.3\.0/)
 })

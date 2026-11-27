@@ -92,3 +92,24 @@
 @media(max-width:650px){.studio-hero{grid-template-columns:1fr}.studio-hero-copy{padding:29px 24px 5px}.studio-hero-visual{min-height:235px}.studio-orbit{width:200px;height:200px}.studio-orbit.orbit-b{width:260px;height:260px}.glass-float{right:8%;bottom:12%}.studio-metrics{grid-template-columns:repeat(2,1fr)}.studio-tabs{overflow-x:auto}.studio-tabs button{white-space:nowrap;padding:11px 10px;font-size:9px}.journey-layout{grid-template-columns:1fr}.journey-picker{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.journey-picker .studio-section-label{grid-column:1/-1}.journey-choice{margin:0}.journey-detail{padding:18px}.domain-grid,.principle-grid{grid-template-columns:1fr 1fr}.domain-card{min-height:170px;padding:13px}}
 @media(max-width:390px){.domain-grid,.principle-grid{grid-template-columns:1fr}.studio-hero-actions{align-items:flex-start;flex-direction:column}}
 @media(prefers-reduced-motion:reduce){.studio-orbit{animation:none}.domain-card,.journey-progress i{transition:none}}
+
+/* v5.3 AI response typography and interactive Konva floor-plan canvas */
+.knowledge-message-content :is(h1,h2,h3,h4){font-family:var(--serif);font-weight:500;line-height:1.25;margin:1.15em 0 .45em;color:var(--ink)}
+.knowledge-message-content p{line-height:1.75;margin:.55em 0}
+.knowledge-message-content ul,.knowledge-message-content ol{padding-left:1.4rem;line-height:1.75}
+.knowledge-message-content li{padding:.12rem 0}
+.knowledge-message-content table{width:100%;border-collapse:collapse;display:block;overflow-x:auto;font-size:11px;margin:12px 0}
+.knowledge-message-content th,.knowledge-message-content td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+.knowledge-message-content th{background:#edf1e9;color:#4d6248}
+.knowledge-message-content blockquote{border-left:3px solid #91a489;margin:12px 0;padding:4px 12px;color:#697366;background:#f5f6f1}
+.knowledge-message-content pre{overflow-x:auto;padding:12px;border-radius:8px;background:#eef0e9;font-size:11px}
+.knowledge-message-content code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em}
+.knowledge-message-content a{color:#587451;text-decoration:underline;text-underline-offset:3px}
+.konva-plan-canvas{min-height:0;padding:10px}
+.konva-plan-canvas canvas{display:block;max-width:none;touch-action:pan-x pan-y}
+.floorplan-ai-panel{grid-column:1/-1;background:linear-gradient(145deg,#f7f8f3,#eef2e9)}
+.floorplan-ai-panel h2{font:400 23px var(--serif);margin:8px 0}
+.floorplan-ai-idea{border:1px solid #dfe6d9;background:#fff;border-radius:9px;padding:13px 15px;margin-top:10px}
+.floorplan-ai-idea>b{font:500 16px var(--serif);color:#43583f}
+.floorplan-ai-idea p{font-size:11px;line-height:1.7;color:#697366}
+.floorplan-ai-idea small{display:block;font-size:10px;line-height:1.6;color:#858d80;margin-top:5px}

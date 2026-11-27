@@ -9,7 +9,7 @@ test('knowledge catalogue spans the major household topics and has provenance',(
  assert.ok(KNOWLEDGE_SOURCES.length>=15)
  const categories=new Set(KNOWLEDGE_SOURCES.map(x=>x.category))
  for(const category of ['energy','maintenance','indoor-air','health-safety','accessibility','kitchen','gardening'])assert.ok(categories.has(category),`missing ${category}`)
- for(const source of KNOWLEDGE_SOURCES){assert.ok(source.title&&source.publisher&&source.url.startsWith('https://')&&source.license)}
+ for(const source of KNOWLEDGE_SOURCES){assert.ok(source.title&&source.publisher&&source.license);assert.ok(source.required===false?source.url.startsWith('https://'):typeof source.content==='string'&&source.content.length>300)}
 })
 
 test('chunker produces bounded overlapping sections and discards tiny fragments',()=>{
