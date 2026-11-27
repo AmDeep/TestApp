@@ -1,6 +1,31 @@
-# Harmonious Home · v4.3
+# Harmonious Home · v4.5
 
 A responsive home intelligence and household project platform. Feng Shui, Vastu and practical building observations remain distinct; deterministic domain rules are authoritative, with optional bounded Groq language synthesis.
+
+## v4.5 interaction, workspace tools and agentic assistance
+
+The frontend baseline is React 19.3 with Vite 8.3 and the current official React plugin. The Render runtime is pinned to Node 22 (22.12 or newer) to satisfy the current Vite toolchain.
+
+- **Motion for React** powers route transitions and measured-room canvas feedback; `prefers-reduced-motion` is respected.
+- **Lucide React** provides scalable, accessible interface icons.
+- **Sonner** provides consistent success/error notifications.
+- **TanStack Query** caches and refreshes the API health signal.
+- **Zustand** persists lightweight UI preferences only (currently the opt-in sound toggle).
+- **Zod** validates project, maintenance and floor-plan room inputs and normalizes legacy workspace collections.
+- **dnd-kit** enables pointer and keyboard-accessible project ordering; the order persists in the existing workspace payload.
+- Maintenance views distinguish open, overdue, upcoming and completed tasks; completing a recurring item schedules its next occurrence.
+- **Recharts** renders the responsive finance spending-category chart.
+
+These libraries are intentionally used for concrete application flows rather than included as unused dependencies. Vite uses a root-relative asset base for reliable deep links and splits larger vendor groups into cacheable chunks. Audio remains opt-in and browser-local; no sound or speech is recorded or uploaded. Existing PGlite persistence and Render disk configuration are unchanged.
+
+
+### v4.5 workspace productivity layer
+- Three-stage project Kanban with pointer and keyboard drag/drop across Planned, In progress and Completed lanes; ordering and status are written to the existing workspace record.
+- Floating workspace windows for Home Copilot, Quick Capture and Workspace Pulse. Windows can be dragged, minimized to a dock, maximized/restored and closed independently.
+- Global command palette (`Ctrl+K` / `Cmd+K`) for fast navigation; Escape closes it.
+- Quick Capture accepts pasted notes or dropped `.txt`, `.md` and `.csv` files up to 1.5 MB. File contents are read locally in the browser and stored as workspace notes; they are not uploaded.
+- Home Copilot surfaces transparent local suggestions from current project, maintenance and budget records. Its optional AI planning workflow runs a Planner agent followed by a Safety Gate agent through `POST /api/assist/plan`; proposals require explicit user acceptance and are never auto-saved. The endpoint is rate-limited and requires `GROQ_API_KEY` (and optionally `GROQ_MODEL`). Assessment synthesis remains a separate bounded AI workflow. Neither workflow provides professional building, engineering, financial or safety advice.
+- Workspace Pulse summarises project, maintenance and estimate counts. All floating panels are keyboard operable and use reduced-motion-aware transitions.
 
 ## v4.3 platform capabilities
 
@@ -61,7 +86,10 @@ A responsive home intelligence and household project platform. Feng Shui, Vastu 
 
 ## Required configuration
 
-Node.js 20+. The embedded PGlite database is included as an application dependency; no external database server is required.
+Set `GROQ_API_KEY` to enable AI assessment synthesis and the optional two-agent workspace planner. Without it, deterministic local workspace insights, navigation, drag-and-drop and all ordinary workspace features continue to work.
+
+
+Node.js 22.12 or newer. The embedded PGlite database is included as an application dependency; no external database server is required.
 
 ```bash
 cp .env.example .env
@@ -135,7 +163,7 @@ npm run build
 
 The domain tests validate the deterministic assessment rules. End-to-end tests against a live embedded-database/Render environment should be run before production release.
 
-## Version 4.3.0 routing and API discovery
+## Routing and API discovery (introduced in v4.3)
 
 All main application modules now have direct URLs under `/app/`: `/app/overview`, `/app/assessment`, `/app/room-plan`, `/app/explorer`, `/app/room-journal`, `/app/projects`, `/app/budget`, `/app/finance/overview`, `/app/maintenance`, `/app/compare`, `/app/history`, `/app/household`, and `/app/settings`. Finance submodules have dedicated URLs at `/app/finance/{overview,transactions,vendors,orders,invoices}`. Express serves the SPA entry point for direct route refreshes while `/api/*` remains reserved for JSON APIs.
 

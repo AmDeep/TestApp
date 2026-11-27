@@ -1,7 +1,7 @@
 {
   "name": "Harmonious Home",
   "short_name": "Harmonious",
-  "description": "A thoughtful home assessment and household workspace",
+  "description": "A home intelligence, planning and household workspace",
   "start_url": "/app/overview",
   "scope": "/",
   "display": "standalone",

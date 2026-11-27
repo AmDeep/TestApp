@@ -1,6 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Toaster } from 'sonner'
 import './index.css'
 
 class AppErrorBoundary extends React.Component {
@@ -13,6 +15,8 @@ class AppErrorBoundary extends React.Component {
   }
 }
 
+const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false } } })
+
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode><AppErrorBoundary><App/></AppErrorBoundary></React.StrictMode>
+  <React.StrictMode><QueryClientProvider client={queryClient}><AppErrorBoundary><App/></AppErrorBoundary><Toaster position="bottom-right" richColors closeButton duration={3200}/></QueryClientProvider></React.StrictMode>
 )

@@ -80,3 +80,38 @@ export async function runAssessmentAgents({profile,findings,missing,model,apiKey
     }
   }
 }
+
+/**
+ * Bounded workspace planning workflow. AI may propose reversible, low-risk
+ * project ideas; a separate safety pass approves candidate indices. Nothing is
+ * written to the workspace until the user explicitly accepts a suggestion.
+ */
+export async function runWorkspacePlanningAgents({workspace,intent='general',model,apiKey}) {
+  const groq=new Groq({apiKey,timeout:25000,maxRetries:1})
+  const safeWorkspace={
+    projects:(Array.isArray(workspace?.projects)?workspace.projects:[]).slice(0,80).map(x=>({title:String(x.title||'').slice(0,120),room:String(x.room||'').slice(0,60),status:String(x.status||'planned'),priority:String(x.priority||'medium')})),
+    maintenance:(Array.isArray(workspace?.maintenance)?workspace.maintenance:[]).slice(0,100).map(x=>({title:String(x.title||'').slice(0,120),room:String(x.room||'').slice(0,60),due:String(x.due||'').slice(0,10),done:Boolean(x.done)})),
+    budget:Number.isFinite(Number(workspace?.budget))?Number(workspace.budget):0,
+    financeSummary:workspace?.finance?{transactionCount:Array.isArray(workspace.finance.transactions)?workspace.finance.transactions.length:0,invoiceCount:Array.isArray(workspace.finance.invoices)?workspace.finance.invoices.length:0}:null,
+  }
+  const source=JSON.stringify({intent:String(intent).slice(0,40),workspace:safeWorkspace})
+  const plan=await completion(groq,model,[
+    {role:'system',content:GUARDRAILS+' You are the Home Project Planner. Produce at most 6 practical, reversible, low-risk suggestions based only on supplied workspace records and intent. Do not invent home facts, measurements, costs, dates, regulations, or professional credentials. Suggestions may include observation, decluttering, planning, comparing quotes, documenting condition, checking product manuals, or arranging qualified inspection. Never instruct structural, electrical, gas, plumbing, roof, ladder, mold remediation, asbestos, or hazardous chemical work. Return JSON with summary and suggestions array; each suggestion has title, room, priority (high|medium|low), reason, type (project|maintenance). Do not include due dates or cost estimates.'},
+    {role:'user',content:source},
+  ],1200)
+  const candidates=Array.isArray(plan.suggestions)?plan.suggestions.slice(0,6):[]
+  const review=await completion(groq,model,[
+    {role:'system',content:GUARDRAILS+' You are the Safety Gate Agent. Review candidate suggestions for unsupported facts, unsafe work, invented measurements/costs/dates, or professional advice. Return JSON only: approvedIndices (array of integer indexes from the supplied candidates), safetyNote (short string). Exclude any candidate that is unsafe or relies on invented facts. Do not rewrite candidates.'},
+    {role:'user',content:JSON.stringify({candidates})},
+  ],500)
+  const allowed=new Set(Array.isArray(review.approvedIndices)?review.approvedIndices.filter(x=>Number.isInteger(x)&&x>=0&&x<candidates.length):[])
+  const unsafeTerms=/\b(structural|load[- ]bearing|electrical|wiring|gas line|plumbing|roof repair|ladder|mold removal|asbestos|pesticide|hazardous chemical|demolition|rewire|breaker panel)\b/i
+  const suggestions=candidates.flatMap((candidate,index)=>{
+    if(!allowed.has(index)||typeof candidate?.title!=='string')return []
+    const title=candidate.title.trim().slice(0,120)
+    const combined=`${title} ${candidate.reason||''}`
+    if(title.length<3||unsafeTerms.test(combined))return []
+    return [{title,room:typeof candidate.room==='string'?candidate.room.slice(0,60):'Whole home',priority:['high','medium','low'].includes(candidate.priority)?candidate.priority:'medium',reason:typeof candidate.reason==='string'?candidate.reason.slice(0,500):'Review this idea before adding it to your plan.',type:['project','maintenance'].includes(candidate.type)?candidate.type:'project'}]
+  })
+  return {summary:typeof plan.summary==='string'?plan.summary.slice(0,800):'Review these draft ideas before accepting any of them.',suggestions,safetyNote:typeof review.safetyNote==='string'?review.safetyNote.slice(0,500):'Suggestions passed the automated screening step; user review is still required.',agents:[{name:'home_project_planner',status:'completed'},{name:'safety_gate',status:'completed'}],disclaimer:'AI-generated planning ideas are not building, engineering, financial or safety advice. Verify every action and obtain qualified help where appropriate.'}
+}
