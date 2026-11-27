@@ -1,4 +1,4 @@
-# Harmonious Home · v4.0
+# Harmonious Home · v4.1
 
 A responsive home intelligence and household project platform. Feng Shui, Vastu and practical building observations remain distinct; deterministic domain rules are authoritative, with optional bounded Groq language synthesis.
 
@@ -10,8 +10,8 @@ A responsive home intelligence and household project platform. Feng Shui, Vastu 
 - Authentication and API rate limits; security headers; request size limits.
 - Password reset and invitations can be delivered through Resend.
 
-### PostgreSQL cloud workspace
-- Render PostgreSQL database with schema bootstrap at server startup.
+### Embedded PGlite workspace
+- Embedded PGlite database with schema bootstrap and demo-account seeding at server startup.
 - Household-scoped workspace JSON persistence for profile, assessments, room journal, projects, measured plan, maintenance and financial records.
 - Optimistic version checks prevent silent overwrites; authenticated users can sync across devices.
 - Autosave to cloud after edits; manual refresh/save controls; local browser copy remains available offline.
@@ -53,11 +53,11 @@ A responsive home intelligence and household project platform. Feng Shui, Vastu 
 
 ## Required configuration
 
-Node.js 20+ and PostgreSQL 13+.
+Node.js 20+. The embedded PGlite database is included as an application dependency; no external database server is required.
 
 ```bash
 cp .env.example .env
-# Set DATABASE_URL and a cryptographically random JWT_SECRET (32+ characters)
+# Set a cryptographically random JWT_SECRET (32+ characters) and optionally DATABASE_DIR
 npm install
 npm test
 npm run build
@@ -68,7 +68,7 @@ npm start
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
+| `DATABASE_DIR` | Embedded database directory; defaults to `./data/db` locally and `/var/data/db` on Render |
 | `JWT_SECRET` | Strong random secret, at least 32 characters |
 | `APP_URL` | Public application origin used in invitation/reset links |
 | `RESEND_API_KEY`, `MAIL_FROM` | Optional email delivery for invitations, password reset and reminders |
