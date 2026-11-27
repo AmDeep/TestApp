@@ -2,42 +2,20 @@ services:
   - type: web
     name: harmonious-home
     runtime: node
-    plan: starter
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    plan: free
+    buildCommand: ONNXRUNTIME_NODE_INSTALL_CUDA=skip yarn install && yarn build
+    startCommand: yarn start
     healthCheckPath: /api/health
-    disk:
-      name: harmonious-home-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: "22"
       - key: NODE_ENV
         value: production
-      - key: DATABASE_DIR
-        value: /var/data/db
-      - key: HF_HOME
-        value: /var/data/hf-cache
       - key: JWT_SECRET
         generateValue: true
-      - key: DEMO_PASSWORD
-        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
         value: openai/gpt-oss-20b
-      - key: APP_URL
-        sync: false
-      - key: MAIL_FROM
-        sync: false
-      - key: RESEND_API_KEY
-        sync: false
-      - key: VAPID_PUBLIC_KEY
-        sync: false
-      - key: VAPID_PRIVATE_KEY
-        sync: false
-      - key: VAPID_SUBJECT
-        value: mailto:admin@example.com
-      - key: SCHEDULER_TIMEZONE
-        value: America/Toronto
+      - key: RAG_DISABLE_EMBEDDINGS
+        value: "true"

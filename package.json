@@ -1,6 +1,6 @@
 {
   "name": "harmonious-home",
-  "version": "4.8.0",
+  "version": "4.9.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "test": "node --test",
     "check": "npm run test && npm run build",
-    "db:check": "node -e \"console.log('Embedded PGlite schema initializes automatically on server startup')\"",
+    "db:check": "node -e \"console.log('Free Mode server database is in-memory; household workspace is browser-local')\"",
     "rag:ingest": "node scripts/ingest-knowledge.js"
   },
   "dependencies": {

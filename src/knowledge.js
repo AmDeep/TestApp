@@ -3,7 +3,8 @@ import path from 'node:path'
 let embeddingPipelinePromise
 const EMBEDDING_MODEL='onnx-community/all-MiniLM-L6-v2-ONNX'
 async function getEmbeddingPipeline(){
- if(!embeddingPipelinePromise)embeddingPipelinePromise=(async()=>{const {pipeline,env}=await import('@huggingface/transformers');env.cacheDir=process.env.HF_HOME||path.join(process.env.DATABASE_DIR?path.dirname(process.env.DATABASE_DIR):process.cwd(),'hf-cache');env.allowRemoteModels=true;return pipeline('feature-extraction',EMBEDDING_MODEL,{dtype:'q8'})})().catch(error=>{embeddingPipelinePromise=null;throw error})
+ if(process.env.RAG_DISABLE_EMBEDDINGS==='true')throw new Error('Dense embeddings disabled; using lexical hybrid retrieval.')
+ if(!embeddingPipelinePromise)embeddingPipelinePromise=(async()=>{const {pipeline,env}=await import('@huggingface/transformers');env.cacheDir=process.env.HF_HOME||path.join(process.env.TMPDIR||'/tmp','harmonious-home-hf-cache');env.allowRemoteModels=true;return pipeline('feature-extraction',EMBEDDING_MODEL,{dtype:'q8'})})().catch(error=>{embeddingPipelinePromise=null;throw error})
  return embeddingPipelinePromise
 }
 async function embedTexts(texts){const pipe=await getEmbeddingPipeline();const output=await pipe(texts,{pooling:'mean',normalize:true});return output.tolist()}

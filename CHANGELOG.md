@@ -84,3 +84,11 @@
 - Added Tiptap rich-text room journal with formatting, lists, undo and redo.
 - Added speech, graph and editor vendor chunks; Azure Speech SDK is dynamically imported only when the user starts narration.
 - Added Azure Speech environment configuration and health capability flag.
+
+
+## 4.9.0 — GitHub + Render Free mode
+
+- Removed persistent disk and `/var/data` startup dependency; PGlite runs in memory only.
+- Household app state remains browser-local with existing JSON backup/restore.
+- Replaced cloud account console with a clear local-storage explanation.
+- Added Render Free blueprint and lexical RAG mode to avoid persistent model cache.

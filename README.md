@@ -229,3 +229,24 @@ All main application modules now have direct URLs under `/app/`: `/app/overview`
 API discovery is available at `GET /api` and `GET /api/v1`; health is `GET /api/health`. The API catalogue lists implemented endpoints and authentication requirements. Finance records are persisted inside the versioned household workspace payload and also exposed through authenticated `GET/PUT /api/finance` endpoints with role checks, payload-size limits, audit entries and optimistic concurrency. Project, maintenance and room data use the shared `GET/PUT /api/workspace` endpoints. Browser-local mode remains available, and the existing authenticated workspace endpoint is the cloud persistence boundary.
 
 Audio is opt-in. The narrator uses Microsoft Cognitive Services Speech SDK with a short-lived token; interface sound effects are generated locally only after the user enables them. No audio recording is created.
+
+
+## v4.9.0 — GitHub + Render Free mode
+
+This release removes the persistent Render disk requirement. Server-side PGlite is opened in memory only; it is temporary and is not a durable account/workspace database. The main household profile, assessment history and workspace state are stored in the user's browser localStorage. Use the in-app Data & Settings page to export/import JSON backups regularly.
+
+**Limitations:** browser-local data does not sync between devices or users, and can be lost if browser site data is cleared. Server-side operational tables, authentication sessions, RAG index state and other server records reset when the Render instance restarts. Cloud account management and household collaboration are not persistent in this deployment mode.
+
+### Render Free configuration
+
+- Build command: `ONNXRUNTIME_NODE_INSTALL_CUDA=skip yarn install && yarn build`
+- Start command: `yarn start`
+- No persistent disk.
+- Do not configure `DATABASE_DIR` or `HF_HOME`.
+- Set `GROQ_API_KEY` to enable Groq-generated responses.
+- `GROQ_MODEL` defaults to `openai/gpt-oss-20b`.
+- `JWT_SECRET` should be a long random secret if session/token endpoints are used.
+- `RAG_DISABLE_EMBEDDINGS=true` avoids downloading/caching the dense embedding model; lexical retrieval is used instead.
+- The RAG catalogue remains in the GitHub repository. Its runtime index is rebuilt in memory after cold starts.
+
+The Render Free service has an ephemeral filesystem and may spin down. This project intentionally avoids writing household data to the server filesystem.
