@@ -55,3 +55,12 @@
 - `node --check` passes for server, Vite configuration and JavaScript modules.
 - TypeScript JSX transpilation syntax checks pass for all React entry points/components, including the new workspace hub and Kanban board.
 - Full Vite production build could not be run because this packaging environment cannot reach the npm registry; Render must install the declared dependencies and run the configured build command.
+
+## 4.6.0 — Microsoft Neural Speech, Specialist Agent Council and Rich Journal
+
+- Added Microsoft Azure AI Speech SDK with short-lived server-issued tokens, authenticated/rate-limited token endpoint, server-only Speech key, neural voice selection, persisted voice preference and browser fallback.
+- Added React Flow visual orchestration map for project, maintenance, budget and accessibility specialist agents, independent safety gate and explicit human approval.
+- Expanded AI planning to specialist insights for maintenance triage, budget stewardship and accessibility/usability; independent gate screens both ideas and insights.
+- Added Tiptap rich-text room journal with formatting, lists, undo and redo.
+- Added speech, graph and editor vendor chunks; Azure Speech SDK is dynamically imported only when the user starts narration.
+- Added Azure Speech environment configuration and health capability flag.

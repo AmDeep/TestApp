@@ -25,6 +25,10 @@ services:
         sync: false
       - key: GROQ_MODEL
         value: openai/gpt-oss-20b
+      - key: AZURE_SPEECH_KEY
+        sync: false
+      - key: AZURE_SPEECH_REGION
+        value: canadacentral
       - key: APP_URL
         sync: false
       - key: MAIL_FROM

@@ -1,4 +1,4 @@
-# Harmonious Home · v4.5
+# Harmonious Home · v4.6
 
 A responsive home intelligence and household project platform. Feng Shui, Vastu and practical building observations remain distinct; deterministic domain rules are authoritative, with optional bounded Groq language synthesis.
 
@@ -26,6 +26,35 @@ These libraries are intentionally used for concrete application flows rather tha
 - Quick Capture accepts pasted notes or dropped `.txt`, `.md` and `.csv` files up to 1.5 MB. File contents are read locally in the browser and stored as workspace notes; they are not uploaded.
 - Home Copilot surfaces transparent local suggestions from current project, maintenance and budget records. Its optional AI planning workflow runs a Planner agent followed by a Safety Gate agent through `POST /api/assist/plan`; proposals require explicit user acceptance and are never auto-saved. The endpoint is rate-limited and requires `GROQ_API_KEY` (and optionally `GROQ_MODEL`). Assessment synthesis remains a separate bounded AI workflow. Neither workflow provides professional building, engineering, financial or safety advice.
 - Workspace Pulse summarises project, maintenance and estimate counts. All floating panels are keyboard operable and use reduced-motion-aware transitions.
+
+## v4.6 advanced speech, specialist agents and rich editing
+
+- **Microsoft Azure AI Speech SDK for JavaScript** (`microsoft-cognitiveservices-speech-sdk`) powers opt-in Microsoft neural voices in the page narrator. The browser requests a short-lived authorization token from authenticated `GET /api/speech/token`; the Azure Speech resource key stays server-side. The endpoint is rate-limited, caches tokens briefly, and reports a clear configuration error. If Azure is not configured or unavailable, the narrator falls back to browser speech synthesis.
+- Configure `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` in Render. Create an Azure AI Speech resource first; choose its actual region (the template defaults to `canadacentral`, which must match the resource). No key belongs in Vite `VITE_*` variables or browser source. Speech is user-initiated; the current page text (up to 7,000 characters) is sent to Azure only for synthesis. No audio recording is created.
+- Six selectable English Neural voices include US and Canadian options. Voice choice and browser-fallback rate persist locally. Interface sound effects remain a separate opt-in setting.
+- **React Flow** (`@xyflow/react` v12.12.1) renders the agent orchestration graph, specialist hand-offs, safety review and human approval stage.
+- **Tiptap** (`@tiptap/react` v3.35.0, `@tiptap/starter-kit`, `@tiptap/extension-placeholder`) upgrades the room journal with rich text, lists, bold/italic formatting and undo/redo.
+- The AI council now includes a Home Project Planner, Maintenance Triage Agent, Budget Steward Agent, Accessibility & Usability Reviewer and independent Safety Gate. Specialist outputs are separately screened; only the project ideas that pass the gate are offered for explicit user acceptance. AI insights remain advisory, cannot inspect the home, and do not write records automatically.
+- Planning intents include whole-home priorities, maintenance/seasonal care, project sequencing, budget/procurement review, accessibility/usability and room organization. Budget prompts use only supplied numeric values and record counts; they do not invent amounts or provide financial advice.
+- Vendor chunks now separate Azure Speech, React Flow and Tiptap from the application core. Speech SDK is dynamically imported only when narration starts.
+
+### Advanced package catalogue (installed and used)
+
+| Package | Implemented use |
+|---|---|
+| `motion` | Route, panel and micro-interaction transitions |
+| `@dnd-kit/core`, `@dnd-kit/sortable` | Accessible Kanban drag-and-drop |
+| `@xyflow/react` | Visual multi-agent workflow graph |
+| `microsoft-cognitiveservices-speech-sdk` | Microsoft Azure neural speech playback |
+| `@tiptap/react`, `@tiptap/starter-kit` | Rich room journal editor |
+| `@tanstack/react-query` | Health/status query cache |
+| `zustand` | Persisted interface and voice preferences |
+| `zod` | Input validation and safe workspace normalization |
+| `recharts` | Responsive finance visualizations |
+| `sonner` | Action and error notifications |
+| `lucide-react` | Consistent vector iconography |
+
+Additional packages considered but not added include Three.js / React Three Fiber (a true 3D home model needs reliable geometry and interaction requirements), MapLibre (no location-based workflow currently requires a map), and a full workflow engine (the current AI jobs are bounded request/response tasks, not durable long-running processes). Avoiding unused dependencies keeps the app leaner and reduces maintenance/security surface.
 
 ## v4.3 platform capabilities
 
