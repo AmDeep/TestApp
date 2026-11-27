@@ -273,3 +273,13 @@ ONNXRUNTIME_NODE_INSTALL_CUDA=skip yarn install --production=false && yarn build
 The Experience Studio is available at `/app/experience-studio` and from the sidebar. It contains guided household journeys, direct links into existing modules, 20 experience domains and design principles. The complete 1,000-item screen and workflow idea catalogue is in `docs/V5_2_1000_EXPERIENCE_IDEAS.md`. Catalogue entries are roadmap ideas unless explicitly implemented in the interface; they should not be interpreted as shipped functionality.
 
 This release adds no paid service, external database, or new runtime dependency. It retains browser-local household storage and the existing Render Free deployment model.
+
+
+## v5.3.0 — Knowledge and spatial experience expansion
+
+- The core RAG corpus now contains 57 bundled original educational knowledge packs across 57 home-related topics. The local corpus is indexed without relying on public website availability.
+- External public references remain catalogued as optional sources; run `yarn rag:ingest --external` to attempt network ingestion separately. The optional source status does not block core RAG readiness.
+- The room plan studio now uses Konva/React Konva for draggable room blocks and PNG export while retaining numeric dimension controls and local workspace persistence.
+- The package research and implementation decisions are documented in `docs/architecture/OPEN_SOURCE_STACK_REVIEW.md`.
+- The exact 1,000-item validation register is `docs/V5_3_1000_ITEM_VALIDATION_REGISTER.md`; each item is labelled implemented, existing foundation or roadmap.
+- See `docs/knowledge/README.md` for the full 57-document inventory and individual Markdown guides in `docs/knowledge/`.

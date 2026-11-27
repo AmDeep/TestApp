@@ -120,3 +120,11 @@
 - Added a user-facing new-version notification and improved offline shell behavior.
 - Corrected Free Mode account messaging so it does not promise durable cloud synchronization.
 - Added storage and service-worker regression tests; see `docs/V5_1_100_POINT_REFINEMENT_REGISTER.md` for the 100-point product register.
+
+## 5.3.0 — Knowledge expansion and interactive spatial canvas
+- Added 57 bundled original educational knowledge packs across household operations, building systems, health and safety, accessibility, energy, maintenance, design, procurement, resilience, AI workflows and cultural design frameworks.
+- Made bundled local packs the required RAG corpus; optional public URLs no longer block readiness or generate repeated startup failures. External references remain in the source catalogue and can be tested separately with `yarn rag:ingest --external`; failures do not block the bundled core corpus.
+- Added ingestion retry cooldown for failed optional references and explicit required/optional corpus status.
+- Kept lexical TF-IDF/BM25 retrieval as the Free-tier baseline; source passages are passed to Groq with clear provenance and local pack citations are labelled as original educational synthesis.
+- Added Konva + React Konva and upgraded the measured room plan to a draggable 2D canvas with synchronized numeric coordinates and PNG export.
+- Added a 1,000-item status-labelled validation register and an open-source package review.
