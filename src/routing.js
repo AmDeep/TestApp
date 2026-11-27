@@ -1,5 +1,5 @@
 export const PAGE_SLUGS = Object.freeze({
-  overview:'overview', assessment:'assessment', results:'results', layout:'room-plan',
+  overview:'overview', studio:'experience-studio', assessment:'assessment', results:'results', layout:'room-plan',
   explore:'explorer', rooms:'room-journal', projects:'projects', budget:'budget',
   finance:'finance', maintenance:'maintenance', compare:'compare', history:'history',
   account:'household', settings:'settings', assistant:'home-assistant'

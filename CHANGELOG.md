@@ -1,3 +1,10 @@
+## 5.2.0 — Experience & Workflow Expansion
+
+- Added Experience Studio with six guided household journeys, step tracking, direct module navigation, 20 experience domains and design principles.
+- Added a 1,000-item experience, screen and workflow planning catalogue in `docs/V5_2_1000_EXPERIENCE_IDEAS.md`. The catalogue clearly distinguishes roadmap concepts from implemented functionality.
+- Added a dedicated `/app/experience-studio` route and sidebar entry.
+- Preserved local-first storage and Render Free deployment constraints; no paid service or new dependency added.
+
 # Changelog
 
 ## 4.8.0 — Local open-source neural speech and expanded knowledge corpus
@@ -92,3 +99,24 @@
 - Household app state remains browser-local with existing JSON backup/restore.
 - Replaced cloud account console with a clear local-storage explanation.
 - Added Render Free blueprint and lexical RAG mode to avoid persistent model cache.
+
+
+## v5.0.0 — Experience, resilience and deployment refinement
+
+- Fixed the Render Blueprint build command to install development dependencies explicitly, ensuring Vite is available while keeping the CUDA-install workaround.
+- Declared Tiptap's required peer packages directly to eliminate avoidable peer-dependency warnings and make editor installs reproducible.
+- Added a keyboard-first quick navigation palette (`Ctrl+K` / `⌘K`) with searchable destinations and Escape-to-close behavior.
+- Reworked the narrow-screen navigation into a horizontally scrollable bottom dock with safe-area spacing.
+- Added a skip-to-content link and clearer storage-quota warnings when browser persistence fails.
+- Improved Kokoro initialization: WebGPU is attempted when available, with automatic fallback to quantized WebAssembly when WebGPU setup fails.
+- Corrected the account-page copy to accurately describe the Render Free local-first storage model; no cloud sync is implied.
+- Preserved the existing local storage keys and backward-compatible JSON import format.
+- Added a live offline indicator so users can distinguish local workspace access from unavailable network-backed services.
+
+## 5.1.0 — Local-first resilience and refinement
+- Added defensive local-storage helpers with quota/error classification and storage footprint diagnostics.
+- Hardened backup restore with schema checks, a replacement confirmation, size limits and reader error handling.
+- Added a production service-worker shell cache with network-first navigation fallback; API traffic is excluded from caches.
+- Added a user-facing new-version notification and improved offline shell behavior.
+- Corrected Free Mode account messaging so it does not promise durable cloud synchronization.
+- Added storage and service-worker regression tests; see `docs/V5_1_100_POINT_REFINEMENT_REGISTER.md` for the 100-point product register.

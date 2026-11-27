@@ -10,7 +10,7 @@ const VOICES=[
 const MODEL='onnx-community/Kokoro-82M-v1.0-ONNX'
 let enginePromise
 function getEngine(setMessage){
- if(!enginePromise)enginePromise=(async()=>{setMessage('Loading the local Kokoro voice model (first use downloads it once)…');const {KokoroTTS}=await import('kokoro-js');let device='wasm',dtype='q8';try{if(navigator.gpu){const adapter=await navigator.gpu.requestAdapter();if(adapter){device='webgpu';dtype='fp32'}}}catch{}setMessage(`Preparing ${device==='webgpu'?'WebGPU':'WebAssembly'} speech engine…`);return KokoroTTS.from_pretrained(MODEL,{dtype,device})})().catch(error=>{enginePromise=null;throw error})
+ if(!enginePromise)enginePromise=(async()=>{setMessage('Loading the local Kokoro voice model (first use downloads it once)…');const {KokoroTTS}=await import('kokoro-js');let webgpu=false;try{if(navigator.gpu){const adapter=await navigator.gpu.requestAdapter();webgpu=!!adapter}}catch{}if(webgpu){try{setMessage('Preparing WebGPU speech engine…');return await KokoroTTS.from_pretrained(MODEL,{dtype:'fp32',device:'webgpu'})}catch(error){setMessage('WebGPU is unavailable here. Switching to the compatible WebAssembly engine…')}}setMessage('Preparing WebAssembly speech engine…');return KokoroTTS.from_pretrained(MODEL,{dtype:'q8',device:'wasm'})})().catch(error=>{enginePromise=null;throw error})
  return enginePromise
 }
 function toWavBlob(samples,sampleRate){

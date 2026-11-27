@@ -3,7 +3,7 @@ services:
     name: harmonious-home
     runtime: node
     plan: free
-    buildCommand: ONNXRUNTIME_NODE_INSTALL_CUDA=skip yarn install && yarn build
+    buildCommand: ONNXRUNTIME_NODE_INSTALL_CUDA=skip yarn install --production=false && yarn build
     startCommand: yarn start
     healthCheckPath: /api/health
     envVars:

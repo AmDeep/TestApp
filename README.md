@@ -250,3 +250,26 @@ This release removes the persistent Render disk requirement. Server-side PGlite 
 - The RAG catalogue remains in the GitHub repository. Its runtime index is rebuilt in memory after cold starts.
 
 The Render Free service has an ephemeral filesystem and may spin down. This project intentionally avoids writing household data to the server filesystem.
+
+
+## v5.0.0 deployment note
+
+The Render Blueprint now runs `yarn install --production=false` before the Vite build. This is intentional: Vite is a development dependency, but it is required at build time even when the deployed runtime uses `NODE_ENV=production`. The `.npmrc` CUDA workaround remains in place for the Kokoro/ONNX dependency tree.
+
+Quick navigation is available with `Ctrl+K` (Windows/Linux) or `⌘K` (macOS). Household data remains local to the browser in Free Mode; export backups regularly.
+
+## v5.2.0 — Local-first resilience
+
+This refinement adds defensive local-storage handling, storage footprint diagnostics, safer backup restoration, and a versioned offline application shell. The service worker caches the app shell and same-origin static assets only; it deliberately does not cache `/api` responses. Render Free remains diskless and server-side PGlite data remains ephemeral. See `docs/V5_1_100_POINT_REFINEMENT_REGISTER.md` for the 100-point refinement register and deployment constraints.
+
+Render build command:
+
+```bash
+ONNXRUNTIME_NODE_INSTALL_CUDA=skip yarn install --production=false && yarn build
+```
+
+## v5.2.0 — Experience Studio
+
+The Experience Studio is available at `/app/experience-studio` and from the sidebar. It contains guided household journeys, direct links into existing modules, 20 experience domains and design principles. The complete 1,000-item screen and workflow idea catalogue is in `docs/V5_2_1000_EXPERIENCE_IDEAS.md`. Catalogue entries are roadmap ideas unless explicitly implemented in the interface; they should not be interpreted as shipped functionality.
+
+This release adds no paid service, external database, or new runtime dependency. It retains browser-local household storage and the existing Render Free deployment model.
